@@ -32,7 +32,7 @@ public final class WSClient extends AbsWSClient {
 		}
 		else if (BROADCAST.equals(name) || BROADCAST_MESSAGE.equals(name)) {
 			checkArgs(name, args, 1);
-			return WSUtil.broadcast(factory, args[0]);
+			return WSUtil.broadcast(pc.getConfig(), factory, args[0]);
 		}
 		else if (IS_OPEN.equals(name)) {
 			checkArgs(name, args, 0);
@@ -63,7 +63,7 @@ public final class WSClient extends AbsWSClient {
 			return WSUtil.send(session, args.get(MESSAGE));
 		}
 		else if (BROADCAST.equals(name) || BROADCAST_MESSAGE.equals(name)) {
-			return WSUtil.broadcast(factory, args.get(MESSAGE));
+			return WSUtil.broadcast(pc.getConfig(), factory, args.get(MESSAGE));
 		}
 		else if (IS_OPEN.equals(name)) {
 			return session.isOpen();
@@ -81,6 +81,23 @@ public final class WSClient extends AbsWSClient {
 			}
 		}
 		throw exception.createExpressionException("WSClient does not have the function [" + name + "]");
+	}
+
+	@Override
+	public String toString() {
+		return "{"
+
+				+ "\n\tsend(any message):boolean;"
+
+				+ "\n\tbroadcast(any message):boolean;"
+
+				+ "\n\tisOpen():boolean;"
+
+				+ "\n\tisClose():boolean;"
+
+				+ "\n\tclose():void;"
+
+				+ "\n}";
 	}
 
 }

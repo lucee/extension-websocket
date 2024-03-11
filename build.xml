@@ -14,8 +14,27 @@
   <property name="src" location="source/java/src"/>
   <property name="srcImg" location="source/images"/>
   
+  <property name="tld" location="source/tld"/>
+  <property name="fld" location="source/fld"/>
   <buildnumber file="build.number"/>
   
+
+    <scriptdef name="repl" language="javascript">
+     <attribute name="haystack" />
+     <attribute name="needle" />
+     <attribute name="repl" />
+     <attribute name="property" />
+     <![CDATA[
+      var text = attributes.get("haystack");
+      var needle = attributes.get("needle");
+      var repl = attributes.get("repl");
+      text=text.trim();
+
+      var regex = new RegExp(needle,'g');
+      text=text.replace(regex,repl);
+      project.setProperty(attributes.get("property"), text);
+     ]]>
+  </scriptdef>
 
   <path id="classpath">
     <fileset dir="${lib}">
@@ -92,6 +111,13 @@ lucee-core-version: "${luceeCoreVersion}"
         <attribute name="Bundle-SymbolicName" value="${bundlename}"/>
       </manifest>
     </jar>
+
+    <!-- copy the flds necessary -->
+    <loadfile property="c1" srcFile="${fld}/function.fld" />
+    <repl haystack="${c1}" needle="{bundle-name}" repl="${bundlename}" property="c2"/>
+    <repl haystack="${c2}" needle="{bundle-version}" repl="${bundleversion}${build.number}${versionAppendix}" property="c3"/>
+    <echo message="${c3}" file="${dist}/extension/flds/ws-functions.fld"/>
+
 
 
 
