@@ -9,11 +9,6 @@ import java.nio.charset.Charset;
 
 import javax.servlet.ServletContext;
 import javax.servlet.http.Cookie;
-import javax.websocket.CloseReason;
-import javax.websocket.CloseReason.CloseCode;
-import javax.websocket.CloseReason.CloseCodes;
-import javax.websocket.EncodeException;
-import javax.websocket.Session;
 
 import org.lucee.extension.websocket.WebSocketEndpointFactory;
 
@@ -37,6 +32,11 @@ import lucee.runtime.util.Decision;
 
 public class WSUtil {
 
+	public static final short TYPE_UNDEFINED = 0;
+	public static final short TYPE_JAKARTA = 1;
+	public static final short TYPE_JAVAX = 2;
+	public static final short TYPE_NOT_AVAILABLE = -1;
+
 	public static final String SERIALIZE_JSON_CLASS = "lucee.runtime.functions.conversion.SerializeJSON";
 	public static final String SERIALIZE_CLASS = "lucee.runtime.functions.dynamicEvaluation.Serialize";
 	public static final String EVALUATE_CLASS = "lucee.runtime.functions.dynamicEvaluation.Evaluate";
@@ -44,6 +44,7 @@ public class WSUtil {
 
 	public static final Object NULL = new Object();
 	public static final String DEFAULT_DIRECTORY = "{lucee-web}/websockets/";
+	private static short containerType;
 
 	public static String getSystemPropOrEnvVar(String name, String defaultValue) {
 		// env
@@ -77,13 +78,20 @@ public class WSUtil {
 		return CFMLEngineFactory.getInstance().getCreationUtil().createMapping(cw, "/ws", path, null, Config.INSPECT_ONCE, true, false, false, false, true, true, null, -1, -1);
 	}
 
-	public static ConfigWeb getConfig(ConfigServer cs, Session session) {
+	public static ConfigWeb getConfig(ConfigServer cs, Object session) {
 		// TODO make it better
-		String reqURI = session.getRequestURI().toString();
-		String reqContextPath = reqURI.substring(0, reqURI.indexOf("/ws"));
+
+		String reqContextPath = null;
 
 		// get a matching servletContext
 		for (ConfigWeb cw: cs.getConfigWebs()) {
+			if (reqContextPath == null) {
+				String reqURI = "";
+				if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAKARTA) reqURI = ((jakarta.websocket.Session) session).getRequestURI().toString();
+				else if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAVAX) reqURI = ((javax.websocket.Session) session).getRequestURI().toString();
+				reqContextPath = reqURI.substring(0, reqURI.indexOf("/ws"));
+			}
+
 			if (getContextPath(cw).equals(reqContextPath)) return cw;
 			// print.e(getContextPath(cw.getServletContext()) + " == " + reqContextPath);
 		}
@@ -127,16 +135,16 @@ public class WSUtil {
 	 * @throws IOException
 	 * @throws EncodeException
 	 */
-	public static boolean send(Session session, Object res) throws PageException {
+	public static boolean send(ConfigWeb cw, Object session, Object res) throws PageException {
 		if (res == null || res == NULL) return false;
 		CFMLEngine eng = CFMLEngineFactory.getInstance();
 		Cast cast = eng.getCastUtil();
 		Decision dec = eng.getDecisionUtil();
-		if (session == null || !session.isOpen()) throw eng.getExceptionUtil().createApplicationException("cannot send message, connection to client is closed.");
+		if (session == null || !isOpen(cw, session)) throw eng.getExceptionUtil().createApplicationException("cannot send message, connection to client is closed.");
 		try {
-			if (dec.isBinary(res)) session.getBasicRemote().sendBinary(ByteBuffer.wrap(cast.toBinary(res)));
-			else if (dec.isSimpleValue(res)) session.getBasicRemote().sendText(cast.toString(res));
-			else session.getBasicRemote().sendObject(res);
+			if (dec.isBinary(res)) sendBinary(cw, session, ByteBuffer.wrap(cast.toBinary(res)));
+			else if (dec.isSimpleValue(res)) sendText(cw, session, cast.toString(res));
+			else sendObject(cw, session, res);
 			return true;
 		}
 		catch (Exception e) {
@@ -153,19 +161,19 @@ public class WSUtil {
 		try {
 			if (dec.isBinary(res)) {
 				ByteBuffer data = ByteBuffer.wrap(cast.toBinary(res));
-				for (Session session: factory.getSessions(cw)) {
-					if (session.isOpen()) session.getBasicRemote().sendBinary(data);
+				for (Object session: factory.getSessions(cw)) {
+					if (isOpen(cw, session)) sendBinary(cw, session, data);// session.getBasicRemote().sendBinary(data);
 				}
 			}
 			else if (dec.isSimpleValue(res)) {
 				String data = cast.toString(res);
-				for (Session session: factory.getSessions(cw)) {
-					if (session.isOpen()) session.getBasicRemote().sendText(data);
+				for (Object session: factory.getSessions(cw)) {
+					if (isOpen(cw, session)) sendText(cw, session, data);
 				}
 			}
 			else {
-				for (Session session: factory.getSessions(cw)) {
-					if (session.isOpen()) session.getBasicRemote().sendObject(res);
+				for (Object session: factory.getSessions(cw)) {
+					if (isOpen(cw, session)) sendObject(cw, session, res);
 				}
 			}
 		}
@@ -233,11 +241,15 @@ public class WSUtil {
 		return new Object[] { res, eng.getCastUtil().toStruct(deserializeJSON(pc, content)) };
 	}
 
-	public static CloseReason toCloseReason(Object obj) throws PageException {
+	public static Object toCloseReason(ConfigWeb cw, Object obj) throws PageException {
 		CFMLEngine eng = CFMLEngineFactory.getInstance();
 		Cast cast = eng.getCastUtil();
 
-		if (obj instanceof CloseReason) return (CloseReason) obj;
+		if (obj instanceof jakarta.websocket.CloseReason) return obj;
+		if (obj instanceof javax.websocket.CloseReason) return obj;
+
+		short ct = WSUtil.getContainerType(cw);
+		boolean jak = ct == WSUtil.TYPE_JAKARTA;
 
 		// Close Reason as a Struct
 		Struct sct = cast.toStruct(obj, null);
@@ -249,13 +261,15 @@ public class WSUtil {
 			if (o == null) o = sct.get(cast.toKey("text"), null);
 
 			if (o == null) throw eng.getExceptionUtil().createApplicationException("missing key [message] in struct for close reason");
-			return new CloseReason(toCloseCode(sct), cast.toString(o));
+			if (jak) return new jakarta.websocket.CloseReason((jakarta.websocket.CloseReason.CloseCode) toCloseCode(cw, sct), cast.toString(o));
+			return new javax.websocket.CloseReason((javax.websocket.CloseReason.CloseCode) toCloseCode(cw, sct), cast.toString(o));
 		}
 
 		// Close Reason as String
 		String str = cast.toString(obj, null);
 		if (str != null) {
-			return new CloseReason(CloseCodes.NORMAL_CLOSURE, str);
+			if (jak) return new jakarta.websocket.CloseReason(jakarta.websocket.CloseReason.CloseCodes.NORMAL_CLOSURE, str);
+			return new javax.websocket.CloseReason(javax.websocket.CloseReason.CloseCodes.NORMAL_CLOSURE, str);
 		}
 
 		throw eng.getExceptionUtil().createApplicationException(
@@ -263,34 +277,39 @@ public class WSUtil {
 
 	}
 
-	private static CloseCode toCloseCode(Struct sct) throws PageException {
+	private static Object toCloseCode(ConfigWeb cw, Struct sct) throws PageException {
 		CFMLEngine eng = CFMLEngineFactory.getInstance();
 		Cast cast = eng.getCastUtil();
+		short ct = WSUtil.getContainerType(cw);
+		boolean jak = ct == WSUtil.TYPE_JAKARTA;
 
 		Object o = sct.get(cast.toKey("code"), null);
 		if (o == null) o = sct.get(cast.toKey("closecode"), null);
 		if (o == null) o = sct.get(cast.toKey("close_code"), null);
-		if (o == null) return CloseCodes.NORMAL_CLOSURE;
+		if (o == null) return jak ? jakarta.websocket.CloseReason.CloseCodes.NORMAL_CLOSURE : javax.websocket.CloseReason.CloseCodes.NORMAL_CLOSURE;
 
-		if (o instanceof CloseCode) return (CloseCode) o;
+		if (o instanceof jakarta.websocket.CloseReason.CloseCode) return o;
+		if (o instanceof javax.websocket.CloseReason.CloseCode) return o;
 
 		String str = cast.toString(o).toUpperCase();
-		if ("CANNOT_ACCEPT".equals(str)) return CloseCodes.CANNOT_ACCEPT;
-		if ("CLOSED_ABNORMALLY".equals(str)) return CloseCodes.CLOSED_ABNORMALLY;
-		if ("GOING_AWAY".equals(str)) return CloseCodes.GOING_AWAY;
-		if ("NO_EXTENSION".equals(str)) return CloseCodes.NO_EXTENSION;
-		if ("NO_STATUS_CODE".equals(str)) return CloseCodes.NO_STATUS_CODE;
-		if ("NORMAL_CLOSURE".equals(str)) return CloseCodes.NORMAL_CLOSURE;
-		if ("NORMAL".equals(str)) return CloseCodes.NORMAL_CLOSURE;
-		if ("NOT_CONSISTENT".equals(str)) return CloseCodes.NOT_CONSISTENT;
-		if ("PROTOCOL_ERROR".equals(str)) return CloseCodes.PROTOCOL_ERROR;
-		if ("RESERVED".equals(str)) return CloseCodes.RESERVED;
-		if ("SERVICE_RESTART".equals(str)) return CloseCodes.SERVICE_RESTART;
-		if ("TLS_HANDSHAKE_FAILURE".equals(str)) return CloseCodes.TLS_HANDSHAKE_FAILURE;
-		if ("TOO_BIG".equals(str)) return CloseCodes.TOO_BIG;
-		if ("TRY_AGAIN_LATER".equals(str)) return CloseCodes.TRY_AGAIN_LATER;
-		if ("UNEXPECTED_CONDITION".equals(str)) return CloseCodes.UNEXPECTED_CONDITION;
-		if ("VIOLATED_POLICY".equals(str)) return CloseCodes.VIOLATED_POLICY;
+		if ("CANNOT_ACCEPT".equals(str)) return jak ? jakarta.websocket.CloseReason.CloseCodes.CANNOT_ACCEPT : javax.websocket.CloseReason.CloseCodes.CANNOT_ACCEPT;
+		if ("CLOSED_ABNORMALLY".equals(str)) return jak ? jakarta.websocket.CloseReason.CloseCodes.CLOSED_ABNORMALLY : javax.websocket.CloseReason.CloseCodes.CLOSED_ABNORMALLY;
+		if ("GOING_AWAY".equals(str)) return jak ? jakarta.websocket.CloseReason.CloseCodes.GOING_AWAY : javax.websocket.CloseReason.CloseCodes.GOING_AWAY;
+		if ("NO_EXTENSION".equals(str)) return jak ? jakarta.websocket.CloseReason.CloseCodes.NO_EXTENSION : javax.websocket.CloseReason.CloseCodes.NO_EXTENSION;
+		if ("NO_STATUS_CODE".equals(str)) return jak ? jakarta.websocket.CloseReason.CloseCodes.NO_STATUS_CODE : javax.websocket.CloseReason.CloseCodes.NO_STATUS_CODE;
+		if ("NORMAL_CLOSURE".equals(str)) return jak ? jakarta.websocket.CloseReason.CloseCodes.NORMAL_CLOSURE : javax.websocket.CloseReason.CloseCodes.NORMAL_CLOSURE;
+		if ("NORMAL".equals(str)) return jak ? jakarta.websocket.CloseReason.CloseCodes.NORMAL_CLOSURE : javax.websocket.CloseReason.CloseCodes.NORMAL_CLOSURE;
+		if ("NOT_CONSISTENT".equals(str)) return jak ? jakarta.websocket.CloseReason.CloseCodes.NOT_CONSISTENT : javax.websocket.CloseReason.CloseCodes.NOT_CONSISTENT;
+		if ("PROTOCOL_ERROR".equals(str)) return jak ? jakarta.websocket.CloseReason.CloseCodes.PROTOCOL_ERROR : javax.websocket.CloseReason.CloseCodes.PROTOCOL_ERROR;
+		if ("RESERVED".equals(str)) return jak ? jakarta.websocket.CloseReason.CloseCodes.RESERVED : javax.websocket.CloseReason.CloseCodes.RESERVED;
+		if ("SERVICE_RESTART".equals(str)) return jak ? jakarta.websocket.CloseReason.CloseCodes.SERVICE_RESTART : javax.websocket.CloseReason.CloseCodes.SERVICE_RESTART;
+		if ("TLS_HANDSHAKE_FAILURE".equals(str))
+			return jak ? jakarta.websocket.CloseReason.CloseCodes.TLS_HANDSHAKE_FAILURE : javax.websocket.CloseReason.CloseCodes.TLS_HANDSHAKE_FAILURE;
+		if ("TOO_BIG".equals(str)) return jak ? jakarta.websocket.CloseReason.CloseCodes.TOO_BIG : javax.websocket.CloseReason.CloseCodes.TOO_BIG;
+		if ("TRY_AGAIN_LATER".equals(str)) return jak ? jakarta.websocket.CloseReason.CloseCodes.TRY_AGAIN_LATER : javax.websocket.CloseReason.CloseCodes.TRY_AGAIN_LATER;
+		if ("UNEXPECTED_CONDITION".equals(str))
+			return jak ? jakarta.websocket.CloseReason.CloseCodes.UNEXPECTED_CONDITION : javax.websocket.CloseReason.CloseCodes.UNEXPECTED_CONDITION;
+		if ("VIOLATED_POLICY".equals(str)) return jak ? jakarta.websocket.CloseReason.CloseCodes.VIOLATED_POLICY : javax.websocket.CloseReason.CloseCodes.VIOLATED_POLICY;
 
 		throw eng.getExceptionUtil().createApplicationException("Invalid closure code definition [" + str.toUpperCase()
 				+ "], valid values are [CANNOT_ACCEPT,CLOSED_ABNORMALLY,GOING_AWAY,NO_EXTENSION,NO_STATUS_CODE,NORMAL_CLOSURE,NOT_CONSISTENT,PROTOCOL_ERROR,RESERVED,SERVICE_RESTART,TLS_HANDSHAKE_FAILURE,TOO_BIG,TRY_AGAIN_LATER,UNEXPECTED_CONDITION,VIOLATED_POLICY]");
@@ -311,14 +330,14 @@ public class WSUtil {
 		return path;
 	}
 
-	public static PageContext createPageContext(WebSocketEndpointFactory factory, final ConfigWeb cw, final Session session, final String componentName) throws PageException {
+	public static PageContext createPageContext(WebSocketEndpointFactory factory, final ConfigWeb cw, final Object session, final String componentName) throws PageException {
 
 		ByteArrayOutputStream baos = new ByteArrayOutputStream(); // TODO get nirvana Stream
-		return createPageContext(cw, session, baos, Util.isEmpty(componentName) ? "/" : ("/" + componentName + ".cfc"), session == null ? "" : session.getQueryString(),
+		return createPageContext(cw, session, baos, Util.isEmpty(componentName) ? "/" : ("/" + componentName + ".cfc"), session == null ? "" : getQueryString(cw, session),
 				factory.getTimeout(cw));
 	}
 
-	private static PageContext createPageContext(final ConfigWeb cw, final Session session, OutputStream os, final String path, String qs, long timeout) throws PageException {
+	private static PageContext createPageContext(final ConfigWeb cw, final Object session, OutputStream os, final String path, String qs, long timeout) throws PageException {
 		try {
 			CFMLEngine eng = CFMLEngineFactory.getInstance();
 			Class<?> clazz = eng.getClassUtil().loadClass("lucee.runtime.thread.ThreadUtil");
@@ -428,4 +447,78 @@ public class WSUtil {
 		Log log = getLog(config);
 		return log != null && log.getLogLevel() >= level;
 	}
+
+	public static String getId(ConfigWeb cw, Object session) {
+		if (getContainerType(cw) == TYPE_JAKARTA) return ((jakarta.websocket.Session) session).getId();
+		else if (getContainerType(cw) == TYPE_JAVAX) return ((javax.websocket.Session) session).getId();
+		return null;
+	}
+
+	public static boolean isOpen(ConfigWeb cw, Object session) {
+		if (getContainerType(cw) == TYPE_JAKARTA) return ((jakarta.websocket.Session) session).isOpen();
+		else if (getContainerType(cw) == TYPE_JAVAX) return ((javax.websocket.Session) session).isOpen();
+		return false;
+	}
+
+	public static Object getBasicRemote(ConfigWeb cw, Object session) {
+		if (getContainerType(cw) == TYPE_JAKARTA) return ((jakarta.websocket.Session) session).getBasicRemote();
+		else if (getContainerType(cw) == TYPE_JAVAX) return ((javax.websocket.Session) session).getBasicRemote();
+		return null;
+	}
+
+	public static void sendBinary(ConfigWeb cw, Object session, ByteBuffer data) throws IOException {
+		Object br = getBasicRemote(cw, session);
+		if (getContainerType(cw) == TYPE_JAKARTA) ((jakarta.websocket.RemoteEndpoint.Basic) br).sendBinary(data);
+		else if (getContainerType(cw) == TYPE_JAVAX) ((javax.websocket.RemoteEndpoint.Basic) br).sendBinary(data);
+	}
+
+	public static void sendText(ConfigWeb cw, Object session, String data) throws IOException {
+		Object br = getBasicRemote(cw, session);
+		if (getContainerType(cw) == TYPE_JAKARTA) ((jakarta.websocket.RemoteEndpoint.Basic) br).sendText(data);
+		else if (getContainerType(cw) == TYPE_JAVAX) ((javax.websocket.RemoteEndpoint.Basic) br).sendText(data);
+	}
+
+	public static void sendObject(ConfigWeb cw, Object session, Object data) throws Exception {
+		Object br = getBasicRemote(cw, session);
+		if (getContainerType(cw) == TYPE_JAKARTA) ((jakarta.websocket.RemoteEndpoint.Basic) br).sendObject(data);
+		else if (getContainerType(cw) == TYPE_JAVAX) ((javax.websocket.RemoteEndpoint.Basic) br).sendObject(data);
+	}
+
+	public static String getQueryString(ConfigWeb cw, Object session) {
+		if (getContainerType(cw) == TYPE_JAKARTA) return ((jakarta.websocket.Session) session).getQueryString();
+		else if (getContainerType(cw) == TYPE_JAVAX) return ((javax.websocket.Session) session).getQueryString();
+		return null;
+	}
+
+	public static Object getReasonPhrase(ConfigWeb cw, Object closeReason) {
+		if (getContainerType(cw) == TYPE_JAKARTA) return ((jakarta.websocket.CloseReason) closeReason).getReasonPhrase();
+		else if (getContainerType(cw) == TYPE_JAVAX) return ((javax.websocket.CloseReason) closeReason).getReasonPhrase();
+		return null;
+	}
+
+	public static void close(ConfigWeb cw, Object session, Object cr) throws IOException {
+		if (getContainerType(cw) == TYPE_JAKARTA) {
+			if (cr != null) ((jakarta.websocket.Session) session).close((jakarta.websocket.CloseReason) cr);
+			else((jakarta.websocket.Session) session).close();
+		}
+		else if (getContainerType(cw) == TYPE_JAVAX) {
+			if (cr != null) ((javax.websocket.Session) session).close((javax.websocket.CloseReason) cr);
+			else((javax.websocket.Session) session).close();
+		}
+	}
+
+	public static short getContainerType(ConfigWeb cw) {
+		if (containerType == TYPE_UNDEFINED) {
+			Object oServerContainer = cw.getServletContext().getAttribute("javax.websocket.server.ServerContainer");
+			if (oServerContainer instanceof jakarta.websocket.server.ServerContainer) {
+				containerType = TYPE_JAKARTA;
+			}
+			else if (oServerContainer instanceof javax.websocket.server.ServerContainer) {
+				containerType = TYPE_JAVAX;
+			}
+			else containerType = TYPE_NOT_AVAILABLE;
+		}
+		return containerType;
+	}
+
 }

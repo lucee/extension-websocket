@@ -3,22 +3,10 @@ package org.lucee.extension.websocket;
 import java.io.IOException;
 import java.util.Date;
 
-import javax.websocket.CloseReason;
-import javax.websocket.EncodeException;
-import javax.websocket.EndpointConfig;
-import javax.websocket.OnClose;
-import javax.websocket.OnError;
-import javax.websocket.OnMessage;
-import javax.websocket.OnOpen;
-import javax.websocket.Session;
-import javax.websocket.server.PathParam;
-import javax.websocket.server.ServerEndpoint;
-
 import org.lucee.extension.websocket.client.WSClient;
 import org.lucee.extension.websocket.client.WSClients;
 import org.lucee.extension.websocket.util.AsyncInvoker;
 import org.lucee.extension.websocket.util.GraceStop;
-import org.lucee.extension.websocket.util.ServletAwareConfig;
 import org.lucee.extension.websocket.util.WSUtil;
 
 import lucee.loader.engine.CFMLEngine;
@@ -34,10 +22,7 @@ import lucee.runtime.type.Collection;
 import lucee.runtime.type.Struct;
 import lucee.runtime.type.UDF;
 
-//ServerEndpoint(value="/endpoint", encoders = MessageEncoder.class, decoders= MessageDecoder.class)
-
-@ServerEndpoint(value = "/ws/{component-name}", configurator = ServletAwareConfig.class)
-public class WebSocketEndpoint {
+public class BaseWebSocketEndpoint {
 	private static final Collection.Key GRACE_PERIOD;
 	private static final int DEFAULT_GRACE_PERIOD = 5;
 	private final Date startTime;
@@ -58,7 +43,7 @@ public class WebSocketEndpoint {
 	}
 
 	// called by the Servelt engine
-	public WebSocketEndpoint() {
+	public BaseWebSocketEndpoint() {
 		factory = WebSocketEndpointFactory.getInstance();
 		startTime = new Date();
 
@@ -81,17 +66,16 @@ public class WebSocketEndpoint {
 		newerVersion = nv;
 	}
 
-	private static Object on(ConfigWeb cw, String methodName, Object... args) throws PageException, IOException, EncodeException {
+	private static Object on(ConfigWeb cw, String methodName, Object... args) throws PageException, IOException {
 		WSUtil.warn(cw, "calling [" + methodName + "] via reflection, Lucee restart needed!");
 		CFMLEngine eng = CFMLEngineFactory.getInstance();
 		return eng.getClassUtil().callMethod(newerVersion, eng.getCreationUtil().createKey(methodName), args);
 	}
 
-	@OnOpen
-	public void onOpen(Session session, EndpointConfig config, @PathParam("component-name") String componentName) throws PageException, IOException, EncodeException {
+	public void onOpen(Object session, Object endpointConfig, String componentName) throws PageException, IOException {
 		// in case we have a newer version injected, we use that newver version
 		if (newerVersion != null) {
-			on(WSUtil.getConfig(factory.getConfigServer(), session), "onOpen", session, config, componentName);
+			on(WSUtil.getConfig(factory.getConfigServer(), session), "onOpen", session, endpointConfig, componentName);
 			return;
 		}
 
@@ -118,7 +102,7 @@ public class WebSocketEndpoint {
 						WSUtil.info(cw, "no [onFirstOpen] function found for component [" + componentName + "]");
 					}
 				}
-				catch (PageException | IOException | EncodeException e) {
+				catch (PageException | IOException e) {
 					WSUtil.error(cw, e);
 					throw e;
 				}
@@ -150,9 +134,9 @@ public class WebSocketEndpoint {
 			Object res = invoke(pc, componentName, factory.ON_OPEN, new Object[] { new WSClient(factory, session) }, WSUtil.NULL);
 			if (res == WSUtil.NULL) WSUtil.info(cw, "no [onOpen] function for component [" + componentName + "]");
 			else WSUtil.info(cw, "called [onOpen] function for component [" + componentName + "]");
-			WSUtil.send(session, res);
+			WSUtil.send(cw, session, res);
 		}
-		catch (PageException | IOException | EncodeException e) {
+		catch (PageException | IOException e) {
 			WSUtil.error(cw, e);
 			throw e;
 		}
@@ -161,18 +145,17 @@ public class WebSocketEndpoint {
 		}
 	}
 
-	@OnMessage
-	public String onMessage(Session session, String message, boolean last, @PathParam("component-name") String componentName) throws PageException, IOException, EncodeException {
+	public String onMessage(Object session, String message, boolean last, String componentName) throws PageException, IOException {
 		// in case we have a newer version injected, we use that newver version
 		if (newerVersion != null) {
 			return CFMLEngineFactory.getInstance().getCastUtil()
 					.toString(on(WSUtil.getConfig(factory.getConfigServer(), session), "onMessage", session, message, last, componentName));
 		}
 
-		WSUtil.info(cw, "onMessage got involved for component [" + componentName + "] with session id [" + session.getId() + "]");
+		WSUtil.info(cw, "onMessage got involved for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "]");
 		if (!last) {
-			WSUtil.info(cw, "buffering message part for onMessage call involved for component [" + componentName + "] with session id [" + session.getId() + "], new part size: ["
-					+ message.length() + "], total buffered size: [" + (message.length() + (messageBuffer == null ? 0 : messageBuffer.length())) + "].");
+			WSUtil.info(cw, "buffering message part for onMessage call involved for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session)
+					+ "], new part size: [" + message.length() + "], total buffered size: [" + (message.length() + (messageBuffer == null ? 0 : messageBuffer.length())) + "].");
 			if (messageBuffer == null) messageBuffer = new StringBuilder();
 			messageBuffer.append(message);
 			return null;
@@ -185,34 +168,36 @@ public class WebSocketEndpoint {
 		return onMessage(session, message, componentName);
 	}
 
-	private String onMessage(Session session, String message, @PathParam("component-name") String componentName) throws PageException, IOException, EncodeException {
+	private String onMessage(Object session, String message, String componentName) throws PageException, IOException {
 		PageContext pc = WSUtil.createPageContext(factory, cw, session, componentName);
 		try {
-			WSUtil.info(cw, "calling [onMessage] for component [" + componentName + "] with session id [" + session.getId() + "], message size: [" + message.length() + "].");
+			WSUtil.info(cw,
+					"calling [onMessage] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "], message size: [" + message.length() + "].");
 
-			Object res = session.isOpen() ? invoke(pc, componentName, factory.ON_MESSAGE, new Object[] { new WSClient(factory, session), message }, WSUtil.NULL) : null;
+			Object res = WSUtil.isOpen(cw, session) ? invoke(pc, componentName, factory.ON_MESSAGE, new Object[] { new WSClient(factory, session), message }, WSUtil.NULL) : null;
 			// session is closed
-			if (!session.isOpen()) {
-				WSUtil.warn(cw, "session [" + session.getId() + "], is no longer open.");
+			if (!WSUtil.isOpen(cw, session)) {
+				WSUtil.warn(cw, "session [" + WSUtil.getId(cw, session) + "], is no longer open.");
 				return null;
 			}
 			// listener function did return null
 			else if (res == null) {
-				WSUtil.info(cw, "called [onMessage] for component [" + componentName + "] with session id [" + session.getId() + "], message size: [" + message.length()
+				WSUtil.info(cw, "called [onMessage] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "], message size: [" + message.length()
 						+ "] with no return value provided.");
 				return null;
 			}
 			// no listener function
 			else if (res == WSUtil.NULL) {
-				WSUtil.info(cw, "no [onMessage] for component [" + componentName + "] with session id [" + session.getId() + "], message size: [" + message.length() + "].");
+				WSUtil.info(cw,
+						"no [onMessage] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "], message size: [" + message.length() + "].");
 				return null;
 			}
-			WSUtil.info(cw, "called [onMessage] for component [" + componentName + "] with session id [" + session.getId() + "], message size: [" + message.length()
+			WSUtil.info(cw, "called [onMessage] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "], message size: [" + message.length()
 					+ "], got a return value.");
 
 			return CFMLEngineFactory.getInstance().getCastUtil().toString(res); // TODO could we use send from above instead?
 		}
-		catch (PageException | IOException | EncodeException e) {
+		catch (PageException | IOException e) {
 			WSUtil.error(cw, e);
 			throw e;
 		}
@@ -221,30 +206,29 @@ public class WebSocketEndpoint {
 		}
 	}
 
-	@OnError
-	public void onError(Session session, Throwable t, @PathParam("component-name") String componentName) throws PageException, IOException, EncodeException {
+	public void onError(Object session, Throwable t, String componentName) throws PageException, IOException {
 		// in case we have a newer version injected, we use that newver version
 		if (newerVersion != null) {
 			on(WSUtil.getConfig(factory.getConfigServer(), session), "onError", session, t, componentName);
 			return;
 		}
 
-		WSUtil.info(cw, "onError got involved for component [" + componentName + "] with session id [" + session.getId() + "]", t);
+		WSUtil.info(cw, "onError got involved for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "]", t);
 
 		PageContext pc = WSUtil.createPageContext(factory, cw, session, componentName);
 		Struct cb = WSUtil.toCatchBlock(pc.getConfig(), t);
 		try {
-			if (session.isOpen()) {
-				WSUtil.info(cw, "calling [onError] for component [" + componentName + "] with session id [" + session.getId() + "].");
+			if (WSUtil.isOpen(cw, session)) {
+				WSUtil.info(cw, "calling [onError] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
 				Object res = invoke(pc, componentName, factory.ON_ERROR, new Object[] { new WSClient(factory, session), cb }, WSUtil.NULL);
-				if (session.isOpen()) { // could be that the session was closed in invoke above
+				if (WSUtil.isOpen(cw, session)) { // could be that the session was closed in invoke above
 					if (res != WSUtil.NULL) {
-						WSUtil.info(cw, "called [onError] for component [" + componentName + "] with session id [" + session.getId() + "].");
-						WSUtil.send(session, res);
+						WSUtil.info(cw, "called [onError] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
+						WSUtil.send(cw, session, res);
 					}
 					else {
-						WSUtil.info(cw, "no [onError] for component [" + componentName + "] with session id [" + session.getId() + "].");
-						WSUtil.send(session, WSUtil.serializeJSON(pc, cb, false));
+						WSUtil.info(cw, "no [onError] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
+						WSUtil.send(cw, session, WSUtil.serializeJSON(pc, cb, false));
 					}
 				}
 			}
@@ -253,7 +237,7 @@ public class WebSocketEndpoint {
 			WSUtil.error(cw, e);
 			Struct ncb = WSUtil.toCatchBlock(pc.getConfig(), e);
 			ncb.setEL("origin", cb);
-			WSUtil.send(session, WSUtil.serializeJSON(pc, ncb, false));
+			WSUtil.send(cw, session, WSUtil.serializeJSON(pc, ncb, false));
 		}
 		finally {
 			WSUtil.releasePageContext(pc);
@@ -261,11 +245,10 @@ public class WebSocketEndpoint {
 
 	}
 
-	@OnClose
-	public void onClose(Session session, CloseReason reason, @PathParam("component-name") String componentName) throws PageException, IOException, EncodeException {
+	public void onClose(Object session, Object closeReason, String componentName) throws PageException, IOException {
 		// in case we have a newer version injected, we use that newver version
 		if (newerVersion != null) {
-			on(WSUtil.getConfig(factory.getConfigServer(), session), "onClose", session, reason, componentName);
+			on(WSUtil.getConfig(factory.getConfigServer(), session), "onClose", session, closeReason, componentName);
 			return;
 		}
 
@@ -273,17 +256,17 @@ public class WebSocketEndpoint {
 		{
 			PageContext pc = WSUtil.createPageContext(factory, cw, session, componentName);
 			try {
-				WSUtil.info(cw, "calling [onClose] for component [" + componentName + "] with session id [" + session.getId() + "].");
-				Object res = invoke(pc, componentName, factory.ON_CLOSE, new Object[] { new WSClient(factory, session), reason.getReasonPhrase() }, WSUtil.NULL);
+				WSUtil.info(cw, "calling [onClose] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
+				Object res = invoke(pc, componentName, factory.ON_CLOSE, new Object[] { new WSClient(factory, session), WSUtil.getReasonPhrase(cw, closeReason) }, WSUtil.NULL);
 
 				if (res != WSUtil.NULL) {
-					WSUtil.info(cw, "called [onClose] for component [" + componentName + "] with session id [" + session.getId() + "].");
+					WSUtil.info(cw, "called [onClose] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
 				}
 				else {
-					WSUtil.info(cw, "no [onClose] for component [" + componentName + "] with session id [" + session.getId() + "].");
+					WSUtil.info(cw, "no [onClose] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
 				}
 			}
-			catch (PageException | IOException | EncodeException e) {
+			catch (PageException | IOException e) {
 				WSUtil.error(cw, e);
 				throw e;
 			}
@@ -316,7 +299,7 @@ public class WebSocketEndpoint {
 						WSUtil.info(cw, "no STATIC function [onLastClose] for component [" + componentName + "].");
 					}
 				}
-				catch (PageException | IOException | EncodeException e) {
+				catch (PageException | IOException e) {
 					WSUtil.error(cw, e);
 					throw e;
 				}
@@ -332,7 +315,7 @@ public class WebSocketEndpoint {
 		}
 	}
 
-	private Component getCFC(PageContext pc, String componentName) throws PageException, IOException, EncodeException {
+	private Component getCFC(PageContext pc, String componentName) throws PageException, IOException {
 		if (mapping == null) {
 			mapping = factory.getComponentMapping(pc);
 			WSUtil.info(cw, "directory used is [" + mapping.getPhysical() + " - " + mapping.toString() + "]");
@@ -345,20 +328,20 @@ public class WebSocketEndpoint {
 		return cfc;
 	}
 
-	private UDF getFunction(PageContext pc, String componentName, Collection.Key udfName) throws PageException, IOException, EncodeException {
+	private UDF getFunction(PageContext pc, String componentName, Collection.Key udfName) throws PageException, IOException {
 		Object obj = getCFC(pc, componentName).get(udfName, null);
 		if (obj instanceof UDF) return (UDF) obj;
 		return null;
 
 	}
 
-	private UDF getStaticFunction(PageContext pc, String componentName, Collection.Key udfName) throws PageException, IOException, EncodeException {
+	private UDF getStaticFunction(PageContext pc, String componentName, Collection.Key udfName) throws PageException, IOException {
 		Object obj = getCFC(pc, componentName).staticScope().get(udfName, null);
 		if (obj instanceof UDF) return (UDF) obj;
 		return null;
 	}
 
-	public Object invoke(PageContext pc, String componentName, Collection.Key udfName, Object[] args, Object rtnIfNoUDF) throws PageException, IOException, EncodeException {
+	public Object invoke(PageContext pc, String componentName, Collection.Key udfName, Object[] args, Object rtnIfNoUDF) throws PageException, IOException {
 		getCFC(pc, componentName);
 		// has function
 		if (cfc.get(udfName, null) instanceof UDF) {
@@ -367,7 +350,7 @@ public class WebSocketEndpoint {
 		return rtnIfNoUDF;
 	}
 
-	public Object invokeStatic(PageContext pc, String componentName, Collection.Key udfName, Object[] args, Object rtnIfNoUDF) throws PageException, IOException, EncodeException {
+	public Object invokeStatic(PageContext pc, String componentName, Collection.Key udfName, Object[] args, Object rtnIfNoUDF) throws PageException, IOException {
 		getCFC(pc, componentName);
 		// has function
 		if (cfc.staticScope().get(udfName, null) instanceof UDF) {

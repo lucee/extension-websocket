@@ -8,11 +8,6 @@ import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 
-import javax.websocket.DeploymentException;
-import javax.websocket.RemoteEndpoint.Async;
-import javax.websocket.RemoteEndpoint.Basic;
-import javax.websocket.Session;
-
 import org.lucee.extension.websocket.util.WSUtil;
 import org.lucee.extension.websocket.util.print;
 
@@ -54,7 +49,7 @@ public class WebSocketEndpointFactory {
 	private static class Data {
 		public long timeout = 50 * 1000;
 		private ConfigWeb config;
-		private Map<String, Session> sessions = new ConcurrentHashMap<>();
+		private Map<String, Object> sessions = new ConcurrentHashMap<>();
 		public Mapping mapping;
 		public Struct configuration;
 		public Resource configFile;
@@ -82,11 +77,21 @@ public class WebSocketEndpointFactory {
 
 			// log
 			result.setEL("log", WSUtil.getLogName(config));
-
-			// sessions
 			Array arrSessions = eng.getCreationUtil().createArray();
 			result.setEL("sessions", arrSessions);
-			for (Session s: sessions.values()) {
+
+			if (WSUtil.getContainerType(config) == WSUtil.TYPE_JAKARTA) getInfoSessionJakarta(eng, arrSessions, addRaw);
+			else if (WSUtil.getContainerType(config) == WSUtil.TYPE_JAVAX) getInfoSessionJavax(eng, arrSessions, addRaw);
+
+			return result;
+		}
+
+		public void getInfoSessionJakarta(CFMLEngine eng, Array arrSessions, boolean addRaw) {
+
+			// sessions
+			jakarta.websocket.Session s;
+			for (Object o: sessions.values()) {
+				s = (jakarta.websocket.Session) o;
 				Struct sct = eng.getCreationUtil().createStruct();
 				arrSessions.appendEL(sct);
 				sct.setEL("id", s.getId());
@@ -99,7 +104,7 @@ public class WebSocketEndpointFactory {
 				sct.setEL("requestURI", s.getRequestURI().toASCIIString());
 
 				// asyncRemote
-				Async as = s.getAsyncRemote();
+				jakarta.websocket.RemoteEndpoint.Async as = s.getAsyncRemote();
 				if (as != null) {
 					Struct sctAs = eng.getCreationUtil().createStruct();
 					sct.setEL("asyncRemote", sctAs);
@@ -108,7 +113,7 @@ public class WebSocketEndpointFactory {
 				}
 
 				// BasicRemote
-				Basic br = s.getBasicRemote();
+				jakarta.websocket.RemoteEndpoint.Basic br = s.getBasicRemote();
 				if (br != null) {
 					Struct sctBr = eng.getCreationUtil().createStruct();
 					sct.setEL("basicRemote", sctBr);
@@ -153,10 +158,81 @@ public class WebSocketEndpointFactory {
 
 				if (addRaw) sct.setEL("raw", s);
 			}
-
-			return result;
 		}
 
+		public void getInfoSessionJavax(CFMLEngine eng, Array arrSessions, boolean addRaw) {
+
+			// sessions
+			javax.websocket.Session s;
+			for (Object o: sessions.values()) {
+				s = (javax.websocket.Session) o;
+				Struct sct = eng.getCreationUtil().createStruct();
+				arrSessions.appendEL(sct);
+				sct.setEL("id", s.getId());
+				sct.setEL("negotiatedSubprotocol", s.getNegotiatedSubprotocol());
+				sct.setEL("protocolVersion", s.getProtocolVersion());
+				sct.setEL("queryString", s.getQueryString());
+				sct.setEL("maxBinaryMessageBufferSize", s.getMaxBinaryMessageBufferSize());
+				sct.setEL("maxIdleTimeout", s.getMaxIdleTimeout());
+				sct.setEL("maxTextMessageBufferSize", s.getMaxTextMessageBufferSize());
+				sct.setEL("requestURI", s.getRequestURI().toASCIIString());
+
+				// asyncRemote
+				javax.websocket.RemoteEndpoint.Async as = s.getAsyncRemote();
+				if (as != null) {
+					Struct sctAs = eng.getCreationUtil().createStruct();
+					sct.setEL("asyncRemote", sctAs);
+					sctAs.setEL("batchingAllowed", as.getBatchingAllowed());
+					sctAs.setEL("sendTimeout", as.getSendTimeout());
+				}
+
+				// BasicRemote
+				javax.websocket.RemoteEndpoint.Basic br = s.getBasicRemote();
+				if (br != null) {
+					Struct sctBr = eng.getCreationUtil().createStruct();
+					sct.setEL("basicRemote", sctBr);
+					sctBr.setEL("batchingAllowed", br.getBatchingAllowed());
+				}
+
+				// PathParameters
+				Map<String, String> pp = s.getPathParameters();
+				if (pp != null && pp.size() > 0) {
+					Struct sctPp = eng.getCreationUtil().createStruct();
+					sct.setEL("pathParameters", sctPp);
+					for (Entry<String, String> e: pp.entrySet()) {
+						sctPp.setEL(e.getKey(), e.getValue());
+					}
+				}
+
+				// RequestParameterMap
+				Map<String, List<String>> rpm = s.getRequestParameterMap();
+				if (rpm != null && rpm.size() > 0) {
+					Struct sctRpm = eng.getCreationUtil().createStruct();
+					sct.setEL("requestParameter", sctRpm);
+					for (Entry<String, List<String>> e: rpm.entrySet()) {
+						sctRpm.setEL(e.getKey(), e.getValue());
+					}
+				}
+
+				// UserPrincipal
+				Principal up = s.getUserPrincipal();
+				if (up != null) {
+					sct.setEL("userPrincipal", up.getName());
+				}
+
+				// UserProperties
+				Map<String, Object> up2 = s.getUserProperties();
+				if (up2 != null && up2.size() > 0) {
+					Struct sctUp = eng.getCreationUtil().createStruct();
+					sct.setEL("userProperties", sctUp);
+					for (Entry<String, Object> e: up2.entrySet()) {
+						sctUp.setEL(e.getKey(), e.getValue());
+					}
+				}
+
+				if (addRaw) sct.setEL("raw", s);
+			}
+		}
 	}
 
 	public WebSocketEndpointFactory(Config config) {
@@ -195,8 +271,6 @@ public class WebSocketEndpointFactory {
 		if (data != null) return data;
 
 		datas.put(cw.getIdentification().getId(), data = new Data(cw));
-		javax.websocket.server.ServerContainer serverContainer = (javax.websocket.server.ServerContainer) cw.getServletContext()
-				.getAttribute("javax.websocket.server.ServerContainer");
 
 		// WSUtil.info(cs, "register web context [" + cw.getIdentification().getId() + " - " +
 		// cw.getServletContext().getRealPath("/") + "]");
@@ -231,7 +305,10 @@ public class WebSocketEndpointFactory {
 
 						CFMLEngine eng = CFMLEngineFactory.getInstance();
 						try {
-							eng.getClassUtil().callStaticMethod((Class) endpoint, "inject", new Object[] { new WebSocketEndpoint() });
+							if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAKARTA)
+								eng.getClassUtil().callStaticMethod((Class) endpoint, "inject", new Object[] { new JakartaWebSocketEndpoint() });
+							else if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAVAX)
+								eng.getClassUtil().callStaticMethod((Class) endpoint, "inject", new Object[] { new JavaxWebSocketEndpoint() });
 						}
 						catch (PageException e) {
 							print.e(e);
@@ -244,10 +321,27 @@ public class WebSocketEndpointFactory {
 						WSUtil.info(cs, msg);
 						WSUtil.info(cw, msg);
 						try {
-							props.put("lucee.websocket.endpoint", WebSocketEndpoint.class);
-							serverContainer.addEndpoint(WebSocketEndpoint.class);
+
+							Object oServerContainer = cw.getServletContext().getAttribute("javax.websocket.server.ServerContainer");
+
+							if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAKARTA) {
+								props.put("lucee.websocket.endpoint", JakartaWebSocketEndpoint.class);
+								((jakarta.websocket.server.ServerContainer) oServerContainer).addEndpoint(JakartaWebSocketEndpoint.class);
+							}
+							else if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAVAX) {
+								props.put("lucee.websocket.endpoint", JavaxWebSocketEndpoint.class);
+								((javax.websocket.server.ServerContainer) oServerContainer).addEndpoint(JavaxWebSocketEndpoint.class);
+							}
+							else {
+								if (oServerContainer == null)
+									throw eng.getExceptionUtil().createApplicationException("[javax.websocket.server.ServerContainer] not supported on this server.");
+								else throw eng.getExceptionUtil()
+										.createApplicationException("container [" + oServerContainer.getClass().getName()
+												+ "] not supported, only the following container are supported [" + jakarta.websocket.server.ServerContainer.class.getName() + ", "
+												+ javax.websocket.server.ServerContainer.class.getName() + "].");
+							}
 						}
-						catch (DeploymentException e) {
+						catch (jakarta.websocket.DeploymentException | javax.websocket.DeploymentException e) {
 							// some container are not able/do not allow to update the endpoint, but this is needed when the
 							// extension updates, so we inject us in the old extension version
 							throw eng.getCastUtil().toPageException(e);
@@ -357,16 +451,16 @@ public class WebSocketEndpointFactory {
 		}
 	}
 
-	public java.util.Collection<Session> getSessions(ConfigWeb config) throws PageException {
+	public java.util.Collection<Object> getSessions(ConfigWeb config) throws PageException {
 		return register(config).sessions.values();
 	}
 
-	public void setSessions(ConfigWeb config, Session session) throws PageException {
-		register(config).sessions.put(session.getId(), session);
+	public void setSessions(ConfigWeb config, Object session) throws PageException {
+		register(config).sessions.put(WSUtil.getId(config, session), session);
 	}
 
-	public void remSessions(ConfigWeb config, Session session) throws PageException {
-		register(config).sessions.remove(session.getId());
+	public void remSessions(ConfigWeb config, Object session) throws PageException {
+		register(config).sessions.remove(WSUtil.getId(config, session));
 	}
 
 	public long getTimeout(ConfigWeb cw) throws PageException {

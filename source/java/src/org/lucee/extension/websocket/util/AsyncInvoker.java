@@ -1,8 +1,6 @@
 package org.lucee.extension.websocket.util;
 
-import javax.websocket.Session;
-
-import org.lucee.extension.websocket.WebSocketEndpoint;
+import org.lucee.extension.websocket.BaseWebSocketEndpoint;
 
 import lucee.runtime.PageContext;
 import lucee.runtime.type.Collection;
@@ -13,11 +11,11 @@ public class AsyncInvoker extends Thread {
 	private String componentName;
 	private Key name;
 	private Object[] args;
-	private Session session;
-	private WebSocketEndpoint endpoint;
+	private Object session;
+	private BaseWebSocketEndpoint endpoint;
 	private boolean isStatic;
 
-	public AsyncInvoker(WebSocketEndpoint endpoint, Session session, String componentName, Collection.Key name, boolean isStatic, Object[] args) {
+	public AsyncInvoker(BaseWebSocketEndpoint endpoint, Object session, String componentName, Collection.Key name, boolean isStatic, Object[] args) {
 		this.session = session;
 		this.endpoint = endpoint;
 		this.componentName = componentName;

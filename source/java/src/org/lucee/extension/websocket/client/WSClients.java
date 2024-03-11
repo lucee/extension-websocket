@@ -1,8 +1,5 @@
 package org.lucee.extension.websocket.client;
 
-import javax.websocket.CloseReason;
-import javax.websocket.Session;
-
 import org.lucee.extension.websocket.WebSocketEndpointFactory;
 import org.lucee.extension.websocket.util.WSUtil;
 
@@ -42,10 +39,9 @@ public final class WSClients extends AbsWSClient {
 		else if (CLOSE.equals(name)) {
 			checkArgs(name, args, 0, 1);
 			try {
-				CloseReason cr = (args.length == 0) ? null : WSUtil.toCloseReason(args[0]);
-				for (Session session: factory.getSessions(pc.getConfig())) {
-					if (cr == null) session.close();
-					else session.close(cr);
+				Object cr = (args.length == 0) ? null : WSUtil.toCloseReason(pc.getConfig(), args[0]);
+				for (Object session: factory.getSessions(pc.getConfig())) {
+					WSUtil.close(pc.getConfig(), session, cr);
 				}
 				return null;
 			}
@@ -84,10 +80,9 @@ public final class WSClients extends AbsWSClient {
 		}
 		else if (CLOSE.equals(name)) {
 			try {
-				CloseReason cr = (args.size() == 0) ? null : WSUtil.toCloseReason(args);
-				for (Session session: factory.getSessions(pc.getConfig())) {
-					if (cr == null) session.close();
-					else session.close(cr);
+				Object cr = (args.size() == 0) ? null : WSUtil.toCloseReason(pc.getConfig(), args);
+				for (Object session: factory.getSessions(pc.getConfig())) {
+					WSUtil.close(pc.getConfig(), session, cr);
 				}
 				return null;
 			}
@@ -100,7 +95,7 @@ public final class WSClients extends AbsWSClient {
 
 	private Object getClients(ConfigWeb cw) throws PageException {
 		Array arr = creator.createArray();
-		for (Session session: factory.getSessions(cw)) {
+		for (Object session: factory.getSessions(cw)) {
 			arr.appendEL(new WSClient(factory, session));
 		}
 		return arr;
