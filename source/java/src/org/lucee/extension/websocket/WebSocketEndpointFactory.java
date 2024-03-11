@@ -5,6 +5,7 @@ import java.security.Principal;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 
 import javax.websocket.DeploymentException;
@@ -15,6 +16,7 @@ import javax.websocket.Session;
 import org.lucee.extension.websocket.util.WSUtil;
 import org.lucee.extension.websocket.util.print;
 
+import lucee.commons.io.log.Log;
 import lucee.commons.io.res.Resource;
 import lucee.loader.engine.CFMLEngine;
 import lucee.loader.engine.CFMLEngineFactory;
@@ -46,8 +48,11 @@ public class WebSocketEndpointFactory {
 
 	//
 	private Map<String, Data> datas = new ConcurrentHashMap<>();
+	private boolean isEndpointRegistered = false;
+	private Object token = new Object();
 
 	private static class Data {
+		public long timeout = 50 * 1000;
 		private ConfigWeb config;
 		private Map<String, Session> sessions = new ConcurrentHashMap<>();
 		public Mapping mapping;
@@ -197,31 +202,66 @@ public class WebSocketEndpointFactory {
 		// cw.getServletContext().getRealPath("/") + "]");
 		// WSUtil.info(cw, "register web context [" + cw.getIdentification().getId() + " - " +
 		// cw.getServletContext().getRealPath("/") + "]");
-		// TODO make sure it will log, so not to waste time when not
 		try {
-			PageContext pc = WSUtil.createPageContext(cw, null, null);
-			data.mapping = getComponentMapping(pc);
-			String msg = "register web context  [" + cw.getIdentification().getId() + " - " + cw.getServletContext().getRealPath("/")
-					+ "] mapping defined in the configuration is [" + data.mapping.getPhysical() + "]";
-			WSUtil.info(cs, msg);
-			WSUtil.info(cw, msg);
+			if (WSUtil.hasLogLevel(cw, Log.LEVEL_INFO)) {
+				PageContext pc = WSUtil.createPageContext(this, cw, null, null);
+				data.mapping = getComponentMapping(pc);
+				String msg = "register web context  [" + cw.getIdentification().getId() + " - " + cw.getServletContext().getRealPath("/")
+						+ "] mapping defined in the configuration is [" + data.mapping.getPhysical() + "]";
+				WSUtil.info(cs, msg);
+				WSUtil.info(cw, msg);
+			}
 		}
 		catch (Exception e) {
 			WSUtil.error(cs, e);
 			WSUtil.error(cw, e);
 		}
 
-		print.e(cw.getConfigDir());
-		print.e("sc:" + cw.getServletContext());
-		print.e("realpath:" + cw.getServletContext().getRealPath("/"));
-		print.e("conainer:" + serverContainer);
-		// Add endpoint manually to server container
-		try {
-			serverContainer.addEndpoint(WebSocketEndpoint.class);
+		if (!isEndpointRegistered) {
+			synchronized (token) {
+				if (!isEndpointRegistered) {
+					Properties props = System.getProperties();
+					Object endpoint = props.get("lucee.websocket.endpoint");
+
+					// update
+					if (endpoint instanceof Class) {
+						String msg = "update existing WebSocketEndpoint with via injection";
+						WSUtil.info(cs, msg);
+						WSUtil.info(cw, msg);
+
+						CFMLEngine eng = CFMLEngineFactory.getInstance();
+						try {
+							eng.getClassUtil().callStaticMethod((Class) endpoint, "inject", new Object[] { new WebSocketEndpoint() });
+						}
+						catch (PageException e) {
+							print.e(e);
+							throw e;
+						}
+					}
+					// add
+					else {
+						String msg = "register WebSocketEndpoint with servlet container";
+						WSUtil.info(cs, msg);
+						WSUtil.info(cw, msg);
+						try {
+							props.put("lucee.websocket.endpoint", WebSocketEndpoint.class);
+							serverContainer.addEndpoint(WebSocketEndpoint.class);
+						}
+						catch (DeploymentException e) {
+							// some container are not able/do not allow to update the endpoint, but this is needed when the
+							// extension updates, so we inject us in the old extension version
+							throw eng.getCastUtil().toPageException(e);
+						}
+					}
+					isEndpointRegistered = true;
+				}
+
+			}
+
 		}
-		catch (DeploymentException e) {
-			throw eng.getCastUtil().toPageException(e);
-		}
+
+		// inject(Object nv)
+
 		return data;
 	}
 
@@ -231,13 +271,6 @@ public class WebSocketEndpointFactory {
 
 	public static WebSocketEndpointFactory getInstance() {
 		return instance;
-	}
-
-	@Override
-	public void finalize() {
-		alive = false;
-		System.err.println("WebSocketEndpoint=>finalize");
-		new Throwable().printStackTrace();
 	}
 
 	public boolean isAlive() {
@@ -257,6 +290,8 @@ public class WebSocketEndpointFactory {
 		Object[] arr = WSUtil.readConfig(pc);
 		data.configFile = (Resource) arr[0];
 		data.configuration = (Struct) arr[1];
+
+		// directory
 		String path = eng.getCastUtil().toString(data.configuration.get("directory", null), null);
 		if (eng.getStringUtil().isEmpty(path, true)) {
 			WSUtil.info(pc.getConfig(), "no [directory] setting found in configuration, using default location [{lucee-web}/websockets/]");
@@ -271,6 +306,10 @@ public class WebSocketEndpointFactory {
 
 		WSUtil.info(cw, "init WebSocketEndpoint for web context [" + cw.getIdentification().getId() + " - " + cw.getServletContext().getRealPath("/")
 				+ "] mapping defined in the configuration is [" + path + "], this is resolved to [" + data.mapping.getPhysical() + "]");
+
+		// timeout
+		long timeout = eng.getCastUtil().toLongValue(data.configuration.get("timeout", null), 0);
+		if (timeout > 0L) data.timeout = timeout;
 
 		return data.mapping;
 	}
@@ -328,5 +367,9 @@ public class WebSocketEndpointFactory {
 
 	public void remSessions(ConfigWeb config, Session session) throws PageException {
 		register(config).sessions.remove(session.getId());
+	}
+
+	public long getTimeout(ConfigWeb cw) throws PageException {
+		return register(cw).timeout;
 	}
 }

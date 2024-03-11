@@ -79,31 +79,27 @@ public class WSUtil {
 
 	public static ConfigWeb getConfig(ConfigServer cs, Session session) {
 		// TODO make it better
-		// extract context path
-		// print.e("path:" + session.getRequestURI().getPath());
-		// print.e("getFragment:" + session.getRequestURI().getFragment());
-		// print.e("path:" + session.getRequestURI().getPath());
 		String reqURI = session.getRequestURI().toString();
 		String reqContextPath = reqURI.substring(0, reqURI.indexOf("/ws"));
-		// print.e("reqContextPath:" + reqContextPath);
 
 		// get a matching servletContext
 		for (ConfigWeb cw: cs.getConfigWebs()) {
-			if (getContextPath(cw.getServletContext()).equals(reqContextPath)) return cw;
+			if (getContextPath(cw).equals(reqContextPath)) return cw;
 			// print.e(getContextPath(cw.getServletContext()) + " == " + reqContextPath);
 		}
 
 		return null;
 	}
 
-	private static String getContextPath(ServletContext servletContext) {
+	private static String getContextPath(ConfigWeb cw) {
 		CFMLEngine eng = CFMLEngineFactory.getInstance();
+		ServletContext sc = cw.getServletContext();
 		try {
-			return (String) servletContext.getClass().getMethod("getContextPath", new Class[0]).invoke(servletContext, new Object[0]);
+			return (String) sc.getClass().getMethod("getContextPath", new Class[0]).invoke(sc, new Object[0]);
 		}
 		catch (Exception e) {
 			// TODO extract from cw.getServletContext().getRealPath("/"));
-			String tmp = eng.getListUtil().last(servletContext.getRealPath("/"), "/", true);
+			String tmp = eng.getListUtil().last(sc.getRealPath("/"), "/", true);
 			tmp = eng.getListUtil().last(tmp, "\\", true);
 			if (tmp.equals("ROOT")) return "";
 			return "/" + tmp;
@@ -227,7 +223,7 @@ public class WSUtil {
 		if (!res.isFile()) {
 			info(pc.getConfig(), "creating configuration file at  [" + res + "], using default settings");
 			res.getParentResource().mkdirs();
-			eng.getIOUtil().write(res, "{\n\t\"directory\":\"" + DEFAULT_DIRECTORY + "\"\n}", false, utf8);
+			eng.getIOUtil().write(res, "{\n\t\"directory\":\"" + DEFAULT_DIRECTORY + "\", \n\t\"timeout\":50000\n}", false, utf8);
 		}
 
 		info(pc.getConfig(), "found configuration at  [" + res + "]");
@@ -315,14 +311,14 @@ public class WSUtil {
 		return path;
 	}
 
-	public static PageContext createPageContext(final ConfigWeb cw, final Session session, final String componentName) throws PageException, RuntimeException {
-		long timeout = 50 * 1000;// TODO get from outside
+	public static PageContext createPageContext(WebSocketEndpointFactory factory, final ConfigWeb cw, final Session session, final String componentName) throws PageException {
+
 		ByteArrayOutputStream baos = new ByteArrayOutputStream(); // TODO get nirvana Stream
-		return createPageContext(cw, session, baos, Util.isEmpty(componentName) ? "/" : ("/" + componentName + ".cfc"), session == null ? "" : session.getQueryString(), timeout);
+		return createPageContext(cw, session, baos, Util.isEmpty(componentName) ? "/" : ("/" + componentName + ".cfc"), session == null ? "" : session.getQueryString(),
+				factory.getTimeout(cw));
 	}
 
-	private static PageContext createPageContext(final ConfigWeb cw, final Session session, OutputStream os, final String path, String qs, long timeout)
-			throws PageException, RuntimeException {
+	private static PageContext createPageContext(final ConfigWeb cw, final Session session, OutputStream os, final String path, String qs, long timeout) throws PageException {
 		try {
 			CFMLEngine eng = CFMLEngineFactory.getInstance();
 			Class<?> clazz = eng.getClassUtil().loadClass("lucee.runtime.thread.ThreadUtil");
@@ -426,5 +422,10 @@ public class WSUtil {
 		catch (Exception e) {
 			return "application";
 		}
+	}
+
+	public static boolean hasLogLevel(Config config, int level) {
+		Log log = getLog(config);
+		return log != null && log.getLogLevel() >= level;
 	}
 }
