@@ -27,6 +27,8 @@ import lucee.runtime.type.Struct;
 import lucee.runtime.util.Creation;
 
 public class WebSocketEndpointFactory {
+	private static final Class<?> JAKARTA_ENDPOINT_CLASS = JakartaWebSocketEndpoint.class;
+	private static final Class<?> JAVAX_ENDPOINT_CLASS = JavaxWebSocketEndpoint.class;
 	private final ConfigServer cs;
 	private final CFMLEngine eng;
 	private static WebSocketEndpointFactory instance;
@@ -45,6 +47,7 @@ public class WebSocketEndpointFactory {
 	private Map<String, Data> datas = new ConcurrentHashMap<>();
 	private boolean isEndpointRegistered = false;
 	private Object token = new Object();
+	private static Object stoken = new Object();
 
 	private static class Data {
 		public long timeout = 50 * 1000;
@@ -277,7 +280,7 @@ public class WebSocketEndpointFactory {
 		// WSUtil.info(cw, "register web context [" + cw.getIdentification().getId() + " - " +
 		// cw.getServletContext().getRealPath("/") + "]");
 		try {
-			if (WSUtil.hasLogLevel(cw, Log.LEVEL_INFO)) {
+			if (WSUtil.hasLogLevel(cw, Log.LEVEL_INFO) || data.mapping == null) {
 				PageContext pc = WSUtil.createPageContext(this, cw, null, null);
 				data.mapping = getComponentMapping(pc);
 				String msg = "register web context  [" + cw.getIdentification().getId() + " - " + cw.getServletContext().getRealPath("/")
@@ -325,12 +328,12 @@ public class WebSocketEndpointFactory {
 							Object oServerContainer = cw.getServletContext().getAttribute("javax.websocket.server.ServerContainer");
 
 							if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAKARTA) {
-								props.put("lucee.websocket.endpoint", JakartaWebSocketEndpoint.class);
-								((jakarta.websocket.server.ServerContainer) oServerContainer).addEndpoint(JakartaWebSocketEndpoint.class);
+								props.put("lucee.websocket.endpoint", JAKARTA_ENDPOINT_CLASS);
+								((jakarta.websocket.server.ServerContainer) oServerContainer).addEndpoint(JAKARTA_ENDPOINT_CLASS);
 							}
 							else if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAVAX) {
-								props.put("lucee.websocket.endpoint", JavaxWebSocketEndpoint.class);
-								((javax.websocket.server.ServerContainer) oServerContainer).addEndpoint(JavaxWebSocketEndpoint.class);
+								props.put("lucee.websocket.endpoint", JAVAX_ENDPOINT_CLASS);
+								((javax.websocket.server.ServerContainer) oServerContainer).addEndpoint(JAVAX_ENDPOINT_CLASS);
 							}
 							else {
 								if (oServerContainer == null)
@@ -341,6 +344,7 @@ public class WebSocketEndpointFactory {
 												+ javax.websocket.server.ServerContainer.class.getName() + "].");
 							}
 						}
+
 						catch (jakarta.websocket.DeploymentException | javax.websocket.DeploymentException e) {
 							// some container are not able/do not allow to update the endpoint, but this is needed when the
 							// extension updates, so we inject us in the old extension version
@@ -363,7 +367,9 @@ public class WebSocketEndpointFactory {
 		return register(config).getInfo(addRaw);
 	}
 
-	public static WebSocketEndpointFactory getInstance() {
+	public static WebSocketEndpointFactory getInstance() throws PageException, RuntimeException {
+		if (instance == null) throw CFMLEngineFactory.getInstance().getExceptionUtil()
+				.createApplicationException("WebSocketEndpointFactory failed to initialize within the Lucee engine (startup-hook).");
 		return instance;
 	}
 

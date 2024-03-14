@@ -28,6 +28,7 @@ import lucee.runtime.exp.PageException;
 import lucee.runtime.ext.function.BIF;
 import lucee.runtime.type.Struct;
 import lucee.runtime.util.Cast;
+import lucee.runtime.util.ClassUtil;
 import lucee.runtime.util.Decision;
 
 public class WSUtil {
@@ -429,7 +430,9 @@ public class WSUtil {
 			return config.getLog("websocket");
 		}
 		catch (Exception e) {
-			return config.getLog("application");
+			Log log = config.getLog("application");
+			log.error("websocket", e);
+			return log;
 		}
 	}
 
@@ -445,7 +448,7 @@ public class WSUtil {
 
 	public static boolean hasLogLevel(Config config, int level) {
 		Log log = getLog(config);
-		return log != null && log.getLogLevel() >= level;
+		return log != null && log.getLogLevel() <= level;
 	}
 
 	public static String getId(ConfigWeb cw, Object session) {
@@ -516,7 +519,12 @@ public class WSUtil {
 			else if (oServerContainer instanceof javax.websocket.server.ServerContainer) {
 				containerType = TYPE_JAVAX;
 			}
-			else containerType = TYPE_NOT_AVAILABLE;
+			else {
+				ClassUtil util = CFMLEngineFactory.getInstance().getClassUtil();
+				if (util.isInstaneOf(oServerContainer.getClass(), "jakarta.websocket.server.ServerContainer")) containerType = TYPE_JAKARTA;
+				else if (util.isInstaneOf(oServerContainer.getClass(), "javax.websocket.server.ServerContainer")) containerType = TYPE_JAVAX;
+				else containerType = TYPE_NOT_AVAILABLE;
+			}
 		}
 		return containerType;
 	}

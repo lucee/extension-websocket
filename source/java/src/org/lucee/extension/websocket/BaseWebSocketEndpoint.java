@@ -44,8 +44,16 @@ public class BaseWebSocketEndpoint {
 
 	// called by the Servelt engine
 	public BaseWebSocketEndpoint() {
-		factory = WebSocketEndpointFactory.getInstance();
 		startTime = new Date();
+		WebSocketEndpointFactory f = null;
+		try {
+			f = WebSocketEndpointFactory.getInstance();
+		}
+		catch (Exception ee) {
+			Config config = CFMLEngineFactory.getInstance().getThreadConfig();
+			WSUtil.error(config, ee);
+		}
+		factory = f;
 
 		Config config = CFMLEngineFactory.getInstance().getThreadConfig();
 		if (config instanceof ConfigWeb) {
@@ -60,6 +68,7 @@ public class BaseWebSocketEndpoint {
 			}
 		}
 		else if (config != null) WSUtil.info(config, "init WebSocketEndpoint");
+
 	}
 
 	public static void inject(Object nv) {
