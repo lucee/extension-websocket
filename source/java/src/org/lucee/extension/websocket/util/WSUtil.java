@@ -32,7 +32,7 @@ import lucee.runtime.util.ClassUtil;
 import lucee.runtime.util.Decision;
 
 public class WSUtil {
-
+	private static final boolean LOG2CONSOLE = true;
 	public static final short TYPE_UNDEFINED = 0;
 	public static final short TYPE_JAKARTA = 1;
 	public static final short TYPE_JAVAX = 2;
@@ -44,7 +44,7 @@ public class WSUtil {
 	public static final String DESERIALIZE_JSON_CLASS = "lucee.runtime.functions.conversion.DeserializeJSON";
 
 	public static final Object NULL = new Object();
-	public static final String DEFAULT_DIRECTORY = "{lucee-web}/websockets/";
+	public static final String DEFAULT_DIRECTORY = "{lucee-config}/websockets/";
 	private static short containerType;
 
 	public static String getSystemPropOrEnvVar(String name, String defaultValue) {
@@ -143,6 +143,7 @@ public class WSUtil {
 		Decision dec = eng.getDecisionUtil();
 		if (session == null || !isOpen(cw, session)) throw eng.getExceptionUtil().createApplicationException("cannot send message, connection to client is closed.");
 		try {
+
 			if (dec.isBinary(res)) sendBinary(cw, session, ByteBuffer.wrap(cast.toBinary(res)));
 			else if (dec.isSimpleValue(res)) sendText(cw, session, cast.toString(res));
 			else sendObject(cw, session, res);
@@ -360,37 +361,37 @@ public class WSUtil {
 
 	public static void trace(Config config, String msg) {
 		Log log = getLog(config);
-		if (log != null) log.trace("endpoint-factory", msg);
+		if (!LOG2CONSOLE && log != null) log.trace("endpoint-factory", msg);
 		else console(msg);
 	}
 
 	public static void trace(Config config, String msg, Throwable t) {
 		Log log = getLog(config);
-		if (log != null) log.log(Log.LEVEL_TRACE, "endpoint-factory", msg, t);
+		if (!LOG2CONSOLE && log != null) log.log(Log.LEVEL_TRACE, "endpoint-factory", msg, t);
 		else console(msg, t);
 	}
 
 	public static void info(Config config, String msg) {
 		Log log = getLog(config);
-		if (log != null) log.info("endpoint-factory", msg);
+		if (!LOG2CONSOLE && log != null) log.info("endpoint-factory", msg);
 		else console(msg);
 	}
 
 	public static void info(Config config, String msg, Throwable t) {
 		Log log = getLog(config);
-		if (log != null) log.log(Log.LEVEL_INFO, "endpoint-factory", msg, t);
+		if (!LOG2CONSOLE && log != null) log.log(Log.LEVEL_INFO, "endpoint-factory", msg, t);
 		else console(msg, t);
 	}
 
 	public static void warn(Config config, String msg) {
 		Log log = getLog(config);
-		if (log != null) log.warn("endpoint-factory", msg);
+		if (!LOG2CONSOLE && log != null) log.warn("endpoint-factory", msg);
 		else console(msg);
 	}
 
 	public static void warn(Config config, String msg, Throwable t) {
 		Log log = getLog(config);
-		if (log != null) log.log(Log.LEVEL_WARN, "endpoint-factory", msg, t);
+		if (!LOG2CONSOLE && log != null) log.log(Log.LEVEL_WARN, "endpoint-factory", msg, t);
 		else console(msg, t);
 	}
 
@@ -402,7 +403,7 @@ public class WSUtil {
 
 	public static void error(Config config, String msg, Throwable t) {
 		Log log = getLog(config);
-		if (log != null) log.log(Log.LEVEL_ERROR, "endpoint-factory", msg, t);
+		if (!LOG2CONSOLE && log != null) log.log(Log.LEVEL_ERROR, "endpoint-factory", msg, t);
 		else console(msg, t);
 	}
 
@@ -426,14 +427,18 @@ public class WSUtil {
 			Config cw = CFMLEngineFactory.getInstance().getThreadConfig();
 			if (cw != null) config = cw;
 		}
+		if (config == null) return null;
 		try {
-			return config.getLog("websocket");
+			Log log = config.getLog("websocket");
+			if (log == null) log = config.getLog("application");
+			if (log != null) return log;
 		}
 		catch (Exception e) {
 			Log log = config.getLog("application");
 			log.error("websocket", e);
 			return log;
 		}
+		return null;
 	}
 
 	public static String getLogName(ConfigWeb config) {
@@ -470,49 +475,69 @@ public class WSUtil {
 	}
 
 	public static void sendBinary(ConfigWeb cw, Object session, ByteBuffer data) throws IOException {
-		Object br = getBasicRemote(cw, session);
-		if (getContainerType(cw) == TYPE_JAKARTA) ((jakarta.websocket.RemoteEndpoint.Basic) br).sendBinary(data);
-		else if (getContainerType(cw) == TYPE_JAVAX) ((javax.websocket.RemoteEndpoint.Basic) br).sendBinary(data);
+		synchronized (session) {
+			Object br = getBasicRemote(cw, session);
+			if (getContainerType(cw) == TYPE_JAKARTA) ((jakarta.websocket.RemoteEndpoint.Basic) br).sendBinary(data);
+			else if (getContainerType(cw) == TYPE_JAVAX) ((javax.websocket.RemoteEndpoint.Basic) br).sendBinary(data);
+		}
 	}
 
 	public static void sendText(ConfigWeb cw, Object session, String data) throws IOException {
-		Object br = getBasicRemote(cw, session);
-		if (getContainerType(cw) == TYPE_JAKARTA) ((jakarta.websocket.RemoteEndpoint.Basic) br).sendText(data);
-		else if (getContainerType(cw) == TYPE_JAVAX) ((javax.websocket.RemoteEndpoint.Basic) br).sendText(data);
+		synchronized (session) {
+			Object br = getBasicRemote(cw, session);
+			if (getContainerType(cw) == TYPE_JAKARTA) ((jakarta.websocket.RemoteEndpoint.Basic) br).sendText(data);
+			else if (getContainerType(cw) == TYPE_JAVAX) ((javax.websocket.RemoteEndpoint.Basic) br).sendText(data);
+		}
 	}
 
 	public static void sendObject(ConfigWeb cw, Object session, Object data) throws Exception {
-		Object br = getBasicRemote(cw, session);
-		if (getContainerType(cw) == TYPE_JAKARTA) ((jakarta.websocket.RemoteEndpoint.Basic) br).sendObject(data);
-		else if (getContainerType(cw) == TYPE_JAVAX) ((javax.websocket.RemoteEndpoint.Basic) br).sendObject(data);
+		synchronized (session) {
+			Object br = getBasicRemote(cw, session);
+			if (getContainerType(cw) == TYPE_JAKARTA) ((jakarta.websocket.RemoteEndpoint.Basic) br).sendObject(data);
+			else if (getContainerType(cw) == TYPE_JAVAX) ((javax.websocket.RemoteEndpoint.Basic) br).sendObject(data);
+		}
 	}
 
 	public static String getQueryString(ConfigWeb cw, Object session) {
-		if (getContainerType(cw) == TYPE_JAKARTA) return ((jakarta.websocket.Session) session).getQueryString();
-		else if (getContainerType(cw) == TYPE_JAVAX) return ((javax.websocket.Session) session).getQueryString();
-		return null;
+		synchronized (session) {
+			if (getContainerType(cw) == TYPE_JAKARTA) return ((jakarta.websocket.Session) session).getQueryString();
+			else if (getContainerType(cw) == TYPE_JAVAX) return ((javax.websocket.Session) session).getQueryString();
+			return null;
+		}
 	}
 
-	public static Object getReasonPhrase(ConfigWeb cw, Object closeReason) {
-		if (getContainerType(cw) == TYPE_JAKARTA) return ((jakarta.websocket.CloseReason) closeReason).getReasonPhrase();
-		else if (getContainerType(cw) == TYPE_JAVAX) return ((javax.websocket.CloseReason) closeReason).getReasonPhrase();
-		return null;
+	public static Object getReasonPhrase(ConfigWeb cw, Object session, Object closeReason) {
+		synchronized (session) {
+			if (getContainerType(cw) == TYPE_JAKARTA) return ((jakarta.websocket.CloseReason) closeReason).getReasonPhrase();
+			else if (getContainerType(cw) == TYPE_JAVAX) return ((javax.websocket.CloseReason) closeReason).getReasonPhrase();
+			return null;
+		}
 	}
 
 	public static void close(ConfigWeb cw, Object session, Object cr) throws IOException {
-		if (getContainerType(cw) == TYPE_JAKARTA) {
-			if (cr != null) ((jakarta.websocket.Session) session).close((jakarta.websocket.CloseReason) cr);
-			else((jakarta.websocket.Session) session).close();
-		}
-		else if (getContainerType(cw) == TYPE_JAVAX) {
-			if (cr != null) ((javax.websocket.Session) session).close((javax.websocket.CloseReason) cr);
-			else((javax.websocket.Session) session).close();
+		synchronized (session) {
+			if (getContainerType(cw) == TYPE_JAKARTA) {
+				if (cr != null) ((jakarta.websocket.Session) session).close((jakarta.websocket.CloseReason) cr);
+				else((jakarta.websocket.Session) session).close();
+			}
+			else if (getContainerType(cw) == TYPE_JAVAX) {
+				if (cr != null) ((javax.websocket.Session) session).close((javax.websocket.CloseReason) cr);
+				else((javax.websocket.Session) session).close();
+			}
 		}
 	}
 
 	public static short getContainerType(ConfigWeb cw) {
 		if (containerType == TYPE_UNDEFINED) {
 			Object oServerContainer = cw.getServletContext().getAttribute("javax.websocket.server.ServerContainer");
+			if (oServerContainer == null) oServerContainer = cw.getServletContext().getAttribute("jakarta.websocket.server.ServerContainer");
+
+			/*
+			 * if (oServerContainer == null) { print.e("+++++++++++++++++++++++++"); Enumeration e =
+			 * cw.getServletContext().getAttributeNames(); while (e.hasMoreElements()) { Object n =
+			 * e.nextElement(); print.e(n); } }
+			 */
+
 			if (oServerContainer instanceof jakarta.websocket.server.ServerContainer) {
 				containerType = TYPE_JAKARTA;
 			}

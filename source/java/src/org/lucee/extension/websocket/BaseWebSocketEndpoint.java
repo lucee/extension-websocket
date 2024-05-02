@@ -266,7 +266,8 @@ public class BaseWebSocketEndpoint {
 			PageContext pc = WSUtil.createPageContext(factory, cw, session, componentName);
 			try {
 				WSUtil.info(cw, "calling [onClose] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
-				Object res = invoke(pc, componentName, factory.ON_CLOSE, new Object[] { new WSClient(factory, session), WSUtil.getReasonPhrase(cw, closeReason) }, WSUtil.NULL);
+				Object res = invoke(pc, componentName, factory.ON_CLOSE, new Object[] { new WSClient(factory, session), WSUtil.getReasonPhrase(cw, session, closeReason) },
+						WSUtil.NULL);
 
 				if (res != WSUtil.NULL) {
 					WSUtil.info(cw, "called [onClose] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
