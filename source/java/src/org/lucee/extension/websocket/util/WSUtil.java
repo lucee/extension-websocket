@@ -336,7 +336,7 @@ public class WSUtil {
 
 		ByteArrayOutputStream baos = new ByteArrayOutputStream(); // TODO get nirvana Stream
 		return createPageContext(cw, session, baos, Util.isEmpty(componentName) ? "/" : ("/" + componentName + ".cfc"), session == null ? "" : getQueryString(cw, session),
-				factory.getTimeout(cw));
+				factory.getRequestTimeout(cw));
 	}
 
 	private static PageContext createPageContext(final ConfigWeb cw, final Object session, OutputStream os, final String path, String qs, long timeout) throws PageException {
@@ -397,7 +397,7 @@ public class WSUtil {
 
 	public static void error(Config config, Exception e) {
 		Log log = getLog(config);
-		if (log != null) log.error("endpoint-factory", e);
+		if (!LOG2CONSOLE && log != null) log.error("endpoint-factory", e);
 		else console(e);
 	}
 
@@ -525,6 +525,21 @@ public class WSUtil {
 				else((javax.websocket.Session) session).close();
 			}
 		}
+	}
+
+	public static void setMaxIdleTimeout(ConfigWeb cw, Object session, long millis) {
+		synchronized (session) {
+			if (getContainerType(cw) == TYPE_JAKARTA) ((jakarta.websocket.Session) session).setMaxIdleTimeout(millis);
+			else if (getContainerType(cw) == TYPE_JAVAX) ((javax.websocket.Session) session).setMaxIdleTimeout(millis);
+		}
+	}
+
+	public static long getMaxIdleTimeout(ConfigWeb cw, Object session, long defaultValue) {
+		synchronized (session) {
+			if (getContainerType(cw) == TYPE_JAKARTA) return ((jakarta.websocket.Session) session).getMaxIdleTimeout();
+			else if (getContainerType(cw) == TYPE_JAVAX) return ((javax.websocket.Session) session).getMaxIdleTimeout();
+		}
+		return defaultValue;
 	}
 
 	public static short getContainerType(ConfigWeb cw) {

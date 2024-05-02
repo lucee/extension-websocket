@@ -15,6 +15,7 @@ import lucee.runtime.Component;
 import lucee.runtime.Mapping;
 import lucee.runtime.PageContext;
 import lucee.runtime.PageSource;
+import lucee.runtime.component.Property;
 import lucee.runtime.config.Config;
 import lucee.runtime.config.ConfigWeb;
 import lucee.runtime.exp.PageException;
@@ -37,6 +38,7 @@ public class BaseWebSocketEndpoint {
 	private int gracePeriodFirstOpen;
 	private StringBuilder messageBuffer;
 	private static Object newerVersion;
+	private long idleTimeout = -1;
 
 	static {
 		GRACE_PERIOD = CFMLEngineFactory.getInstance().getCastUtil().toKey("graceperiod");
@@ -82,6 +84,7 @@ public class BaseWebSocketEndpoint {
 	}
 
 	public void onOpen(Object session, Object endpointConfig, String componentName) throws PageException, IOException {
+
 		// in case we have a newer version injected, we use that newver version
 		if (newerVersion != null) {
 			on(WSUtil.getConfig(factory.getConfigServer(), session), "onOpen", session, endpointConfig, componentName);
@@ -96,6 +99,7 @@ public class BaseWebSocketEndpoint {
 			// onFirstOpen
 			if (factory.getSessions(cw).size() == 1) {
 				PageContext pc = WSUtil.createPageContext(factory, cw, session, componentName);
+				setIdleTimeoutWhenNeeded(pc, componentName, session);
 				try {
 					UDF ofo = getStaticFunction(pc, componentName, factory.ON_FIRST_OPEN);
 					if (ofo != null) {
@@ -125,6 +129,7 @@ public class BaseWebSocketEndpoint {
 		// componentName);
 
 		PageContext pc = WSUtil.createPageContext(factory, cw, session, componentName);
+		setIdleTimeoutWhenNeeded(pc, componentName, session);
 		try {
 			// onOpenAsync
 			UDF ooa = getFunction(pc, componentName, factory.ON_OPEN_ASYNC);
@@ -179,6 +184,7 @@ public class BaseWebSocketEndpoint {
 
 	private String onMessage(Object session, String message, String componentName) throws PageException, IOException {
 		PageContext pc = WSUtil.createPageContext(factory, cw, session, componentName);
+		setIdleTimeoutWhenNeeded(pc, componentName, session);
 		try {
 			WSUtil.info(cw,
 					"calling [onMessage] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "], message size: [" + message.length() + "].");
@@ -225,6 +231,7 @@ public class BaseWebSocketEndpoint {
 		WSUtil.info(cw, "onError got involved for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "]", t);
 
 		PageContext pc = WSUtil.createPageContext(factory, cw, session, componentName);
+		setIdleTimeoutWhenNeeded(pc, componentName, session);
 		Struct cb = WSUtil.toCatchBlock(pc.getConfig(), t);
 		try {
 			if (WSUtil.isOpen(cw, session)) {
@@ -264,6 +271,7 @@ public class BaseWebSocketEndpoint {
 		WSUtil.info(cw, "onClose got involved for component [" + componentName + "], current session size [" + factory.getSessions(cw).size() + "], session size 0==last close");
 		{
 			PageContext pc = WSUtil.createPageContext(factory, cw, session, componentName);
+			setIdleTimeoutWhenNeeded(pc, componentName, session);
 			try {
 				WSUtil.info(cw, "calling [onClose] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
 				Object res = invoke(pc, componentName, factory.ON_CLOSE, new Object[] { new WSClient(factory, session), WSUtil.getReasonPhrase(cw, session, closeReason) },
@@ -320,6 +328,32 @@ public class BaseWebSocketEndpoint {
 				// close onFirstOpen
 				if (firstOpen != null && firstOpen.isAlive()) {
 					new GraceStop(firstOpen, gracePeriodFirstOpen).start();
+				}
+			}
+		}
+	}
+
+	private void setIdleTimeoutWhenNeeded(PageContext pc, String componentName, Object session) throws PageException, IOException {
+		if (idleTimeout == -1) {
+			synchronized (startTime) {
+				if (idleTimeout == -1) {
+					// read idle timeput from property if exist
+					try {
+						Component c = getCFC(pc, componentName);
+						for (Property p: c.getProperties(false, true, false, false)) {
+							if ("idleTimeout".equalsIgnoreCase(p.getName())) {
+								idleTimeout = CFMLEngineFactory.getInstance().getCastUtil().toLongValue(p.getValue(), -1);
+								if (idleTimeout > 0) idleTimeout *= 1000;
+								break;
+							}
+						}
+					}
+					catch (Exception e) {
+						WSUtil.error(cw, e);
+					}
+
+					if (idleTimeout < 1) idleTimeout = factory.getIdleTimeout(pc.getConfig());
+					WSUtil.setMaxIdleTimeout(cw, session, idleTimeout);
 				}
 			}
 		}

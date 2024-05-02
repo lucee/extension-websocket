@@ -27,6 +27,10 @@ import lucee.runtime.type.Struct;
 import lucee.runtime.util.Creation;
 
 public class WebSocketEndpointFactory {
+
+	private static final long DEFAULT_REQUEST_TIMEOUT = 50 * 1000;
+	private static final long DEFAULT_IDLE_TIMEOUT = 300 * 1000;
+
 	private static final Class<?> JAKARTA_ENDPOINT_CLASS = JakartaWebSocketEndpoint.class;
 	private static final Class<?> JAVAX_ENDPOINT_CLASS = JavaxWebSocketEndpoint.class;
 	private final ConfigServer cs;
@@ -218,7 +222,7 @@ public class WebSocketEndpointFactory {
 
 		// timeout
 		long timeout = eng.getCastUtil().toLongValue(data.configuration.get("timeout", null), 0);
-		if (timeout > 0L) data.timeout = timeout;
+		if (timeout > 0L) data.requestTimeout = timeout;
 
 		return data.mapping;
 	}
@@ -278,12 +282,17 @@ public class WebSocketEndpointFactory {
 		register(config).sessions.remove(WSUtil.getId(config, session));
 	}
 
-	public long getTimeout(ConfigWeb cw) throws PageException {
-		return register(cw).timeout;
+	public long getRequestTimeout(ConfigWeb cw) throws PageException {
+		return register(cw).requestTimeout;
+	}
+
+	public long getIdleTimeout(ConfigWeb cw) throws PageException {
+		return register(cw).idleTimeout;
 	}
 
 	private static class Data {
-		public long timeout = 50 * 1000;
+		public long requestTimeout = DEFAULT_REQUEST_TIMEOUT;
+		public long idleTimeout = DEFAULT_IDLE_TIMEOUT;
 		private ConfigWeb config;
 		private Map<String, Object> sessions = new ConcurrentHashMap<>();
 		public Mapping mapping;
