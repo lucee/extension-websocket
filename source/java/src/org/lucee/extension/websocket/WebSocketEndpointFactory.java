@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.lucee.extension.websocket.util.WSUtil;
 import org.lucee.extension.websocket.util.print;
+import org.osgi.framework.Bundle;
 
 import lucee.commons.io.log.Log;
 import lucee.commons.io.res.Resource;
@@ -35,7 +36,8 @@ public class WebSocketEndpointFactory {
 	private static final Class<?> JAVAX_ENDPOINT_CLASS = JavaxWebSocketEndpoint.class;
 	private final ConfigServer cs;
 	private final CFMLEngine eng;
-	private static WebSocketEndpointFactory instance;
+	private static WebSocketEndpointFactory instance = null;
+	private static RuntimeException re;
 	// private Map<String, ConfigWeb> configs = new HashMap<>();
 
 	public final Collection.Key ON_OPEN;
@@ -53,23 +55,29 @@ public class WebSocketEndpointFactory {
 	private Object token = new Object();
 
 	public WebSocketEndpointFactory(Config config) {
-		eng = CFMLEngineFactory.getInstance();
-		Creation creator = eng.getCreationUtil();
+		try {
+			eng = CFMLEngineFactory.getInstance();
+			Creation creator = eng.getCreationUtil();
 
-		ON_OPEN = creator.createKey("onOpen");
-		ON_OPEN_ASYNC = creator.createKey("onOpenAsync");
-		ON_FIRST_OPEN = creator.createKey("onFirstOpen");
-		ON_LAST_CLOSE = creator.createKey("onLastClose");
-		ON_MESSAGE = creator.createKey("onMessage");
-		ON_ERROR = creator.createKey("onError");
-		ON_CLOSE = creator.createKey("onClose");
+			ON_OPEN = creator.createKey("onOpen");
+			ON_OPEN_ASYNC = creator.createKey("onOpenAsync");
+			ON_FIRST_OPEN = creator.createKey("onFirstOpen");
+			ON_LAST_CLOSE = creator.createKey("onLastClose");
+			ON_MESSAGE = creator.createKey("onMessage");
+			ON_ERROR = creator.createKey("onError");
+			ON_CLOSE = creator.createKey("onClose");
 
-		cs = (ConfigServer) config;
+			cs = (ConfigServer) config;
 
-		new Registrar(this, config).start();
-		// register();
+			new Registrar(this, config).start();
+			// register();
 
-		instance = this;
+			instance = this;
+		}
+		catch (RuntimeException re) {
+			this.re = re;
+			throw re;
+		}
 	}
 
 	private void register() {
@@ -180,9 +188,13 @@ public class WebSocketEndpointFactory {
 		return register(config).getInfo(addRaw);
 	}
 
-	public static WebSocketEndpointFactory getInstance() throws PageException, RuntimeException {
-		if (instance == null) throw CFMLEngineFactory.getInstance().getExceptionUtil()
-				.createApplicationException("WebSocketEndpointFactory failed to initialize within the Lucee engine (startup-hook).");
+	public static WebSocketEndpointFactory getInstance() throws PageException {
+		if (instance == null) {
+			PageException pe = CFMLEngineFactory.getInstance().getExceptionUtil()
+					.createApplicationException("WebSocketEndpointFactory failed to initialize within the Lucee engine (startup-hook).");
+			if (re != null) pe.initCause(re);
+			throw pe;
+		}
 		return instance;
 	}
 
@@ -220,9 +232,13 @@ public class WebSocketEndpointFactory {
 		WSUtil.info(cw, "init WebSocketEndpoint for web context [" + cw.getIdentification().getId() + " - " + cw.getServletContext().getRealPath("/")
 				+ "] mapping defined in the configuration is [" + path + "], this is resolved to [" + data.mapping.getPhysical() + "]");
 
-		// timeout
-		long timeout = eng.getCastUtil().toLongValue(data.configuration.get("timeout", null), 0);
-		if (timeout > 0L) data.requestTimeout = timeout;
+		// request timeout
+		long timeout = eng.getCastUtil().toLongValue(data.configuration.get("requestTimeout", null), 0);
+		if (timeout > 0L) data.requestTimeout = timeout * 1000;
+
+		// idle timeout
+		timeout = eng.getCastUtil().toLongValue(data.configuration.get("idleTimeout", null), 0);
+		if (timeout > 0L) data.idleTimeout = timeout * 1000;
 
 		return data.mapping;
 	}
@@ -324,6 +340,16 @@ public class WebSocketEndpointFactory {
 			result.setEL("log", WSUtil.getLogName(config));
 			Array arrSessions = eng.getCreationUtil().createArray();
 			result.setEL("sessions", arrSessions);
+
+			// version
+			try {
+				ClassLoader cl = this.getClass().getClassLoader();
+				Bundle b = (Bundle) eng.getClassUtil().callMethod(cl, eng.getCreationUtil().createKey("getBundle"), new Object[0]);
+				result.setEL(eng.getCreationUtil().createKey("version"), b.getVersion().toString());
+			}
+			catch (Exception e) {
+				print.e(e);
+			}
 
 			if (WSUtil.getContainerType(config) == WSUtil.TYPE_JAKARTA) getInfoSessionJakarta(eng, arrSessions, addRaw);
 			else if (WSUtil.getContainerType(config) == WSUtil.TYPE_JAVAX) getInfoSessionJavax(eng, arrSessions, addRaw);
