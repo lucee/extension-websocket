@@ -209,7 +209,6 @@ public class BaseWebSocketEndpoint {
 			}
 			WSUtil.info(cw, "called [onMessage] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "], message size: [" + message.length()
 					+ "], got a return value.");
-
 			return CFMLEngineFactory.getInstance().getCastUtil().toString(res); // TODO could we use send from above instead?
 		}
 		catch (PageException | IOException e) {

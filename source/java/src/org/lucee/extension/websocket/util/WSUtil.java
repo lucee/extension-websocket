@@ -233,7 +233,7 @@ public class WSUtil {
 		if (!res.isFile()) {
 			info(pc.getConfig(), "creating configuration file at  [" + res + "], using default settings");
 			res.getParentResource().mkdirs();
-			eng.getIOUtil().write(res, "{\n\t\"directory\":\"" + DEFAULT_DIRECTORY + "\", \n\t\"timeout\":50000\n}", false, utf8);
+			eng.getIOUtil().write(res, "{\n\t\"directory\":\"" + DEFAULT_DIRECTORY + "\", \n\t\"requestTimeout\":50\n, \n\t\"idleTimeout\":300\n}", false, utf8);
 		}
 
 		info(pc.getConfig(), "found configuration at  [" + res + "]");
