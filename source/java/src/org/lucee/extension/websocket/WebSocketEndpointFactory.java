@@ -16,6 +16,7 @@ import lucee.commons.io.log.Log;
 import lucee.commons.io.res.Resource;
 import lucee.loader.engine.CFMLEngine;
 import lucee.loader.engine.CFMLEngineFactory;
+import lucee.runtime.Component;
 import lucee.runtime.Mapping;
 import lucee.runtime.PageContext;
 import lucee.runtime.config.Config;
@@ -341,6 +342,12 @@ public class WebSocketEndpointFactory {
 			Array arrSessions = eng.getCreationUtil().createArray();
 			result.setEL("sessions", arrSessions);
 
+			Array instances = eng.getCreationUtil().createArray();
+			result.setEL("instances", instances);
+			for (Component cfc: BaseWebSocketEndpoint.instances.values()) {
+				instances.appendEL(cfc);
+			}
+
 			// version
 			try {
 				ClassLoader cl = this.getClass().getClassLoader();
@@ -348,7 +355,6 @@ public class WebSocketEndpointFactory {
 				result.setEL(eng.getCreationUtil().createKey("version"), b.getVersion().toString());
 			}
 			catch (Exception e) {
-				print.e(e);
 			}
 
 			if (WSUtil.getContainerType(config) == WSUtil.TYPE_JAKARTA) getInfoSessionJakarta(eng, arrSessions, addRaw);
@@ -437,6 +443,7 @@ public class WebSocketEndpointFactory {
 			javax.websocket.Session s;
 			for (Object o: sessions.values()) {
 				s = (javax.websocket.Session) o;
+
 				Struct sct = eng.getCreationUtil().createStruct();
 				arrSessions.appendEL(sct);
 				sct.setEL("id", s.getId());

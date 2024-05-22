@@ -78,7 +78,7 @@ version: "${bundleversion}${build.number}${versionAppendix}"
 id: "${id}"
 name: ${label}
 description: ${description}
-start-bundles: false
+start-bundles: true
 release-type: ${releaseType}
 startup-hook: "{'class':'${class}','name':'${bundlename}','version':'${bundleversion}${build.number}${versionAppendix}'}"
 lucee-core-version: "${luceeCoreVersion}"

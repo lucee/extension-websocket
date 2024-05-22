@@ -10,6 +10,7 @@ import lucee.runtime.dump.DumpProperties;
 import lucee.runtime.exp.PageException;
 import lucee.runtime.type.Collection.Key;
 import lucee.runtime.type.Objects;
+import lucee.runtime.type.Struct;
 import lucee.runtime.type.dt.DateTime;
 import lucee.runtime.util.Cast;
 import lucee.runtime.util.Creation;
@@ -84,7 +85,10 @@ public abstract class AbsWSClient implements Objects {
 
 	@Override
 	public final DumpData toDumpData(PageContext pageContext, int maxlevel, DumpProperties dp) {
-		throw exception.createPageRuntimeException(exception.createExpressionException("dumping " + this.className + " is not supported"));
+		Struct data = creator.createStruct();
+		data.setEL("classname", className);
+		return caster.toDumpTable(data, "WSClient", pageContext, maxlevel, dp);
+
 	}
 
 	@Override

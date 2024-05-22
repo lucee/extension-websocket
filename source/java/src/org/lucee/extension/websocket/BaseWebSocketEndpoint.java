@@ -2,6 +2,9 @@ package org.lucee.extension.websocket;
 
 import java.io.IOException;
 import java.util.Date;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.lucee.extension.websocket.client.WSClient;
 import org.lucee.extension.websocket.client.WSClients;
@@ -39,6 +42,10 @@ public class BaseWebSocketEndpoint {
 	private StringBuilder messageBuffer;
 	private static Object newerVersion;
 	private long idleTimeout = -1;
+	private int id;
+	private static AtomicInteger counter = new AtomicInteger(1);
+
+	public static Map<Integer, Component> instances = new ConcurrentHashMap<>();
 
 	static {
 		GRACE_PERIOD = CFMLEngineFactory.getInstance().getCastUtil().toKey("graceperiod");
@@ -70,7 +77,7 @@ public class BaseWebSocketEndpoint {
 			}
 		}
 		else if (config != null) WSUtil.info(config, "init WebSocketEndpoint");
-
+		id = counter.incrementAndGet();
 	}
 
 	public static void inject(Object nv) {
@@ -261,59 +268,28 @@ public class BaseWebSocketEndpoint {
 	}
 
 	public void onClose(Object session, Object closeReason, String componentName) throws PageException, IOException {
-		// in case we have a newer version injected, we use that newver version
-		if (newerVersion != null) {
-			on(WSUtil.getConfig(factory.getConfigServer(), session), "onClose", session, closeReason, componentName);
-			return;
-		}
-
-		WSUtil.info(cw, "onClose got involved for component [" + componentName + "], current session size [" + factory.getSessions(cw).size() + "], session size 0==last close");
-		{
-			PageContext pc = WSUtil.createPageContext(factory, cw, session, componentName);
-			setIdleTimeoutWhenNeeded(pc, componentName, session);
-			try {
-				WSUtil.info(cw, "calling [onClose] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
-				Object res = invoke(pc, componentName, factory.ON_CLOSE, new Object[] { new WSClient(factory, session), WSUtil.getReasonPhrase(cw, session, closeReason) },
-						WSUtil.NULL);
-
-				if (res != WSUtil.NULL) {
-					WSUtil.info(cw, "called [onClose] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
-				}
-				else {
-					WSUtil.info(cw, "no [onClose] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
-				}
+		try {
+			// in case we have a newer version injected, we use that newver version
+			if (newerVersion != null) {
+				on(WSUtil.getConfig(factory.getConfigServer(), session), "onClose", session, closeReason, componentName);
+				return;
 			}
-			catch (PageException | IOException e) {
-				WSUtil.error(cw, e);
-				throw e;
-			}
-			finally {
-				WSUtil.releasePageContext(pc);
-			}
-		}
-		// close openAsync
-		if (this.openAsync != null && openAsync.isAlive()) {
-			new GraceStop(openAsync, gracePeriodOpenAsync).start();
-		}
 
-		// onLastClose
-		synchronized (factory) {
-			factory.remSessions(cw, session);
-			// factory.sessions.remove(session.getId());
-
-			// onLastClose
-			if (factory.getSessions(cw).size() == 0) {
-				WSUtil.info(cw, "calling [onLastClose] function for component [" + componentName + "]");
+			WSUtil.info(cw,
+					"onClose got involved for component [" + componentName + "], current session size [" + factory.getSessions(cw).size() + "], session size 0==last close");
+			{
 				PageContext pc = WSUtil.createPageContext(factory, cw, session, componentName);
+				setIdleTimeoutWhenNeeded(pc, componentName, session);
 				try {
-					UDF olc = getStaticFunction(pc, componentName, factory.ON_LAST_CLOSE);
-					if (olc != null) {
-						lastClose = new AsyncInvoker(this, session, componentName, factory.ON_LAST_CLOSE, true, new Object[] {});
-						lastClose.start();
-						WSUtil.info(cw, "async triggered [onLastClose] for component [" + componentName + "].");
+					WSUtil.info(cw, "calling [onClose] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
+					Object res = invoke(pc, componentName, factory.ON_CLOSE, new Object[] { new WSClient(factory, session), WSUtil.getReasonPhrase(cw, session, closeReason) },
+							WSUtil.NULL);
+
+					if (res != WSUtil.NULL) {
+						WSUtil.info(cw, "called [onClose] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
 					}
 					else {
-						WSUtil.info(cw, "no STATIC function [onLastClose] for component [" + componentName + "].");
+						WSUtil.info(cw, "no [onClose] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
 					}
 				}
 				catch (PageException | IOException e) {
@@ -323,12 +299,50 @@ public class BaseWebSocketEndpoint {
 				finally {
 					WSUtil.releasePageContext(pc);
 				}
+			}
+			// close openAsync
+			if (this.openAsync != null && openAsync.isAlive()) {
+				new GraceStop(openAsync, gracePeriodOpenAsync).start();
+			}
 
-				// close onFirstOpen
-				if (firstOpen != null && firstOpen.isAlive()) {
-					new GraceStop(firstOpen, gracePeriodFirstOpen).start();
+			// onLastClose
+			synchronized (factory) {
+				factory.remSessions(cw, session);
+				// factory.sessions.remove(session.getId());
+
+				// onLastClose
+				if (factory.getSessions(cw).size() == 0) {
+					WSUtil.info(cw, "calling [onLastClose] function for component [" + componentName + "]");
+					PageContext pc = WSUtil.createPageContext(factory, cw, session, componentName);
+					try {
+						UDF olc = getStaticFunction(pc, componentName, factory.ON_LAST_CLOSE);
+						if (olc != null) {
+							lastClose = new AsyncInvoker(this, session, componentName, factory.ON_LAST_CLOSE, true, new Object[] {});
+							lastClose.start();
+							WSUtil.info(cw, "async triggered [onLastClose] for component [" + componentName + "].");
+						}
+						else {
+							WSUtil.info(cw, "no STATIC function [onLastClose] for component [" + componentName + "].");
+						}
+					}
+					catch (PageException | IOException e) {
+						WSUtil.error(cw, e);
+						throw e;
+					}
+					finally {
+						WSUtil.releasePageContext(pc);
+					}
+
+					// close onFirstOpen
+					if (firstOpen != null && firstOpen.isAlive()) {
+						new GraceStop(firstOpen, gracePeriodFirstOpen).start();
+					}
 				}
 			}
+		}
+		finally {
+			instances.remove(id);
+			cfc = null;
 		}
 	}
 
@@ -367,6 +381,7 @@ public class BaseWebSocketEndpoint {
 		if (cfc == null) {
 			PageSource ps = mapping.getPageSource(componentName + ".cfc");
 			this.cfc = WSUtil.loadComponent(pc, ps, "/" + componentName + ".cfc", false, false, true);
+			instances.put(id, cfc);
 		}
 		return cfc;
 	}
