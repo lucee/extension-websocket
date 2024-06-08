@@ -32,7 +32,6 @@ public class BaseWebSocketEndpoint {
 	private final Date startTime;
 	private final WebSocketEndpointFactory factory;
 	private ConfigWeb cw;
-	private Component cfc;
 	private Mapping mapping;
 	private static AsyncInvoker firstOpen;
 	private static AsyncInvoker lastClose;
@@ -45,7 +44,7 @@ public class BaseWebSocketEndpoint {
 	private int id;
 	private static AtomicInteger counter = new AtomicInteger(1);
 
-	public static Map<Integer, Component> instances = new ConcurrentHashMap<>();
+	public static Map<String, Instance> instances = new ConcurrentHashMap<>();
 
 	static {
 		GRACE_PERIOD = CFMLEngineFactory.getInstance().getCastUtil().toKey("graceperiod");
@@ -108,7 +107,7 @@ public class BaseWebSocketEndpoint {
 				PageContext pc = WSUtil.createPageContext(factory, cw, session, componentName);
 				setIdleTimeoutWhenNeeded(pc, componentName, session);
 				try {
-					UDF ofo = getStaticFunction(pc, componentName, factory.ON_FIRST_OPEN);
+					UDF ofo = getStaticFunction(pc, session, componentName, factory.ON_FIRST_OPEN);
 					if (ofo != null) {
 						WSUtil.info(cw, "calling [onFirstOpen] function for component [" + componentName + "]");
 						gracePeriodFirstOpen = CFMLEngineFactory.getInstance().getCastUtil().toIntValue(ofo.getMetaData(pc).get(GRACE_PERIOD, null), DEFAULT_GRACE_PERIOD);
@@ -139,7 +138,7 @@ public class BaseWebSocketEndpoint {
 		setIdleTimeoutWhenNeeded(pc, componentName, session);
 		try {
 			// onOpenAsync
-			UDF ooa = getFunction(pc, componentName, factory.ON_OPEN_ASYNC);
+			UDF ooa = getFunction(pc, session, componentName, factory.ON_OPEN_ASYNC);
 			if (ooa != null) {
 				WSUtil.info(cw, "calling [onOpenAsync] function for component [" + componentName + "]");
 				gracePeriodOpenAsync = CFMLEngineFactory.getInstance().getCastUtil().toIntValue(ooa.getMetaData(pc).get(GRACE_PERIOD, null), DEFAULT_GRACE_PERIOD);
@@ -152,7 +151,7 @@ public class BaseWebSocketEndpoint {
 			}
 			// onOpen
 			WSUtil.info(cw, "calling [onOpen] function for component [" + componentName + "]");
-			Object res = invoke(pc, componentName, factory.ON_OPEN, new Object[] { new WSClient(factory, session) }, WSUtil.NULL);
+			Object res = invoke(pc, session, componentName, factory.ON_OPEN, new Object[] { new WSClient(factory, session) }, WSUtil.NULL);
 			if (res == WSUtil.NULL) WSUtil.info(cw, "no [onOpen] function for component [" + componentName + "]");
 			else WSUtil.info(cw, "called [onOpen] function for component [" + componentName + "]");
 			WSUtil.send(cw, session, res);
@@ -196,7 +195,8 @@ public class BaseWebSocketEndpoint {
 			WSUtil.info(cw,
 					"calling [onMessage] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "], message size: [" + message.length() + "].");
 
-			Object res = WSUtil.isOpen(cw, session) ? invoke(pc, componentName, factory.ON_MESSAGE, new Object[] { new WSClient(factory, session), message }, WSUtil.NULL) : null;
+			Object res = WSUtil.isOpen(cw, session) ? invoke(pc, session, componentName, factory.ON_MESSAGE, new Object[] { new WSClient(factory, session), message }, WSUtil.NULL)
+					: null;
 			// session is closed
 			if (!WSUtil.isOpen(cw, session)) {
 				WSUtil.warn(cw, "session [" + WSUtil.getId(cw, session) + "], is no longer open.");
@@ -242,7 +242,7 @@ public class BaseWebSocketEndpoint {
 		try {
 			if (WSUtil.isOpen(cw, session)) {
 				WSUtil.info(cw, "calling [onError] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
-				Object res = invoke(pc, componentName, factory.ON_ERROR, new Object[] { new WSClient(factory, session), cb }, WSUtil.NULL);
+				Object res = invoke(pc, session, componentName, factory.ON_ERROR, new Object[] { new WSClient(factory, session), cb }, WSUtil.NULL);
 				if (WSUtil.isOpen(cw, session)) { // could be that the session was closed in invoke above
 					if (res != WSUtil.NULL) {
 						WSUtil.info(cw, "called [onError] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
@@ -282,8 +282,8 @@ public class BaseWebSocketEndpoint {
 				setIdleTimeoutWhenNeeded(pc, componentName, session);
 				try {
 					WSUtil.info(cw, "calling [onClose] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
-					Object res = invoke(pc, componentName, factory.ON_CLOSE, new Object[] { new WSClient(factory, session), WSUtil.getReasonPhrase(cw, session, closeReason) },
-							WSUtil.NULL);
+					Object res = invoke(pc, session, componentName, factory.ON_CLOSE,
+							new Object[] { new WSClient(factory, session), WSUtil.getReasonPhrase(cw, session, closeReason) }, WSUtil.NULL);
 
 					if (res != WSUtil.NULL) {
 						WSUtil.info(cw, "called [onClose] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
@@ -315,7 +315,7 @@ public class BaseWebSocketEndpoint {
 					WSUtil.info(cw, "calling [onLastClose] function for component [" + componentName + "]");
 					PageContext pc = WSUtil.createPageContext(factory, cw, session, componentName);
 					try {
-						UDF olc = getStaticFunction(pc, componentName, factory.ON_LAST_CLOSE);
+						UDF olc = getStaticFunction(pc, session, componentName, factory.ON_LAST_CLOSE);
 						if (olc != null) {
 							lastClose = new AsyncInvoker(this, session, componentName, factory.ON_LAST_CLOSE, true, new Object[] {});
 							lastClose.start();
@@ -341,8 +341,9 @@ public class BaseWebSocketEndpoint {
 			}
 		}
 		finally {
-			instances.remove(id);
-			cfc = null;
+			synchronized (session) {
+				instances.remove(getId(session));
+			}
 		}
 	}
 
@@ -352,7 +353,7 @@ public class BaseWebSocketEndpoint {
 				if (idleTimeout == -1) {
 					// read idle timeput from property if exist
 					try {
-						Component c = getCFC(pc, componentName);
+						Component c = getCFC(pc, session, componentName);
 						for (Property p: c.getProperties(false, true, false, false)) {
 							if ("idleTimeout".equalsIgnoreCase(p.getName())) {
 								idleTimeout = CFMLEngineFactory.getInstance().getCastUtil().toLongValue(p.getValue(), -1);
@@ -372,35 +373,47 @@ public class BaseWebSocketEndpoint {
 		}
 	}
 
-	private Component getCFC(PageContext pc, String componentName) throws PageException, IOException {
+	private Component getCFC(PageContext pc, Object session, String componentName) throws PageException, IOException {
 		if (mapping == null) {
 			mapping = factory.getComponentMapping(pc);
 			WSUtil.info(cw, "directory used is [" + mapping.getPhysical() + " - " + mapping.toString() + "]");
 
 		}
-		if (cfc == null) {
-			PageSource ps = mapping.getPageSource(componentName + ".cfc");
-			this.cfc = WSUtil.loadComponent(pc, ps, "/" + componentName + ".cfc", false, false, true);
-			instances.put(id, cfc);
+		String id = getId(session);
+		Instance inst = instances.get(id);
+		if (inst == null) {
+			synchronized (session) {
+				inst = instances.get(id);
+				if (inst == null) {
+					PageSource ps = mapping.getPageSource(componentName + ".cfc");
+					Component cfc = WSUtil.loadComponent(pc, ps, "/" + componentName + ".cfc", false, false, true);
+					instances.put(id, inst = new Instance(session, cfc));
+				}
+			}
 		}
-		return cfc;
+		return inst.cfc;
 	}
 
-	private UDF getFunction(PageContext pc, String componentName, Collection.Key udfName) throws PageException, IOException {
-		Object obj = getCFC(pc, componentName).get(udfName, null);
+	// id is per key, per endpoint
+	private String getId(Object session) {
+		return id + ":" + WSUtil.getId(cw, session);
+	}
+
+	private UDF getFunction(PageContext pc, Object session, String componentName, Collection.Key udfName) throws PageException, IOException {
+		Object obj = getCFC(pc, session, componentName).get(udfName, null);
 		if (obj instanceof UDF) return (UDF) obj;
 		return null;
 
 	}
 
-	private UDF getStaticFunction(PageContext pc, String componentName, Collection.Key udfName) throws PageException, IOException {
-		Object obj = getCFC(pc, componentName).staticScope().get(udfName, null);
+	private UDF getStaticFunction(PageContext pc, Object session, String componentName, Collection.Key udfName) throws PageException, IOException {
+		Object obj = getCFC(pc, session, componentName).staticScope().get(udfName, null);
 		if (obj instanceof UDF) return (UDF) obj;
 		return null;
 	}
 
-	public Object invoke(PageContext pc, String componentName, Collection.Key udfName, Object[] args, Object rtnIfNoUDF) throws PageException, IOException {
-		getCFC(pc, componentName);
+	public Object invoke(PageContext pc, Object session, String componentName, Collection.Key udfName, Object[] args, Object rtnIfNoUDF) throws PageException, IOException {
+		Component cfc = getCFC(pc, session, componentName);
 		// has function
 		if (cfc.get(udfName, null) instanceof UDF) {
 			return cfc.call(pc, udfName, args);
@@ -408,8 +421,8 @@ public class BaseWebSocketEndpoint {
 		return rtnIfNoUDF;
 	}
 
-	public Object invokeStatic(PageContext pc, String componentName, Collection.Key udfName, Object[] args, Object rtnIfNoUDF) throws PageException, IOException {
-		getCFC(pc, componentName);
+	public Object invokeStatic(PageContext pc, Object session, String componentName, Collection.Key udfName, Object[] args, Object rtnIfNoUDF) throws PageException, IOException {
+		Component cfc = getCFC(pc, session, componentName);
 		// has function
 		if (cfc.staticScope().get(udfName, null) instanceof UDF) {
 			return cfc.staticScope().call(pc, udfName, args);
@@ -423,5 +436,17 @@ public class BaseWebSocketEndpoint {
 
 	public WebSocketEndpointFactory getFactory() {
 		return factory;
+	}
+
+	public static class Instance {
+
+		public final Object session;
+		public final Component cfc;
+
+		public Instance(Object session, Component cfc) {
+			this.session = session;
+			this.cfc = cfc;
+		}
+
 	}
 }

@@ -29,8 +29,8 @@ public class AsyncInvoker extends Thread {
 		PageContext pc = null;
 		try {
 			pc = WSUtil.createPageContext(endpoint.getFactory(), endpoint.getConfig(), session, componentName);
-			if (isStatic) endpoint.invokeStatic(pc, componentName, name, args, WSUtil.NULL);
-			else endpoint.invoke(pc, componentName, name, args, WSUtil.NULL);
+			if (isStatic) endpoint.invokeStatic(pc, session, componentName, name, args, WSUtil.NULL);
+			else endpoint.invoke(pc, session, componentName, name, args, WSUtil.NULL);
 		}
 		catch (Exception e) {
 			WSUtil.error(endpoint.getConfig(), e);

@@ -6,6 +6,10 @@ import java.io.OutputStream;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
+import java.security.Principal;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
 
 import javax.servlet.ServletContext;
 import javax.servlet.http.Cookie;
@@ -567,6 +571,171 @@ public class WSUtil {
 			}
 		}
 		return containerType;
+	}
+
+	public static Struct getInfoSession(ConfigWeb config, CFMLEngine eng, Object session, boolean addRaw) {
+		if (WSUtil.getContainerType(config) == WSUtil.TYPE_JAKARTA) return getInfoSessionJakarta(eng, session, addRaw);
+		return getInfoSessionJavax(eng, session, addRaw);
+	}
+
+	private static Struct getInfoSessionJakarta(CFMLEngine eng, Object session, boolean addRaw) {
+
+		// sessions
+		jakarta.websocket.Session s = (jakarta.websocket.Session) session;
+		try {
+			// we only report open sessions
+			if (!s.isOpen()) return null;
+			Struct sct = eng.getCreationUtil().createStruct();
+			sct.setEL("id", s.getId());
+			sct.setEL("negotiatedSubprotocol", s.getNegotiatedSubprotocol());
+			sct.setEL("protocolVersion", s.getProtocolVersion());
+			sct.setEL("queryString", s.getQueryString());
+			sct.setEL("maxBinaryMessageBufferSize", s.getMaxBinaryMessageBufferSize());
+			sct.setEL("maxIdleTimeout", s.getMaxIdleTimeout());
+			sct.setEL("maxTextMessageBufferSize", s.getMaxTextMessageBufferSize());
+			sct.setEL("requestURI", s.getRequestURI().toASCIIString());
+
+			// asyncRemote
+			jakarta.websocket.RemoteEndpoint.Async as = s.getAsyncRemote();
+			if (as != null) {
+				Struct sctAs = eng.getCreationUtil().createStruct();
+				sct.setEL("asyncRemote", sctAs);
+				sctAs.setEL("batchingAllowed", as.getBatchingAllowed());
+				sctAs.setEL("sendTimeout", as.getSendTimeout());
+			}
+
+			// BasicRemote
+			jakarta.websocket.RemoteEndpoint.Basic br = s.getBasicRemote();
+			if (br != null) {
+				Struct sctBr = eng.getCreationUtil().createStruct();
+				sct.setEL("basicRemote", sctBr);
+				sctBr.setEL("batchingAllowed", br.getBatchingAllowed());
+			}
+
+			// PathParameters
+			Map<String, String> pp = s.getPathParameters();
+			if (pp != null && pp.size() > 0) {
+				Struct sctPp = eng.getCreationUtil().createStruct();
+				sct.setEL("pathParameters", sctPp);
+				for (Entry<String, String> e: pp.entrySet()) {
+					sctPp.setEL(e.getKey(), e.getValue());
+				}
+			}
+
+			// RequestParameterMap
+			Map<String, List<String>> rpm = s.getRequestParameterMap();
+			if (rpm != null && rpm.size() > 0) {
+				Struct sctRpm = eng.getCreationUtil().createStruct();
+				sct.setEL("requestParameter", sctRpm);
+				for (Entry<String, List<String>> e: rpm.entrySet()) {
+					sctRpm.setEL(e.getKey(), e.getValue());
+				}
+			}
+
+			// UserPrincipal
+			Principal up = s.getUserPrincipal();
+			if (up != null) {
+				sct.setEL("userPrincipal", up.getName());
+			}
+
+			// UserProperties
+			Map<String, Object> up2 = s.getUserProperties();
+			if (up2 != null && up2.size() > 0) {
+				Struct sctUp = eng.getCreationUtil().createStruct();
+				sct.setEL("userProperties", sctUp);
+				for (Entry<String, Object> e: up2.entrySet()) {
+					sctUp.setEL(e.getKey(), e.getValue());
+				}
+			}
+
+			if (addRaw) sct.setEL("raw", s);
+			return sct;
+		}
+		catch (IllegalStateException ise) {
+			// this happens when a session get closed while reading the data, unlikely because we check "isOpen"
+			// before but possible.
+		}
+		return null;
+	}
+
+	private static Struct getInfoSessionJavax(CFMLEngine eng, Object session, boolean addRaw) {
+
+		// sessions
+		javax.websocket.Session s = (javax.websocket.Session) session;
+		try {
+			// we only report open sessions
+			if (!s.isOpen()) return null;
+			Struct sct = eng.getCreationUtil().createStruct();
+			sct.setEL("id", s.getId());
+			sct.setEL("negotiatedSubprotocol", s.getNegotiatedSubprotocol());
+			sct.setEL("protocolVersion", s.getProtocolVersion());
+			sct.setEL("queryString", s.getQueryString());
+			sct.setEL("maxBinaryMessageBufferSize", s.getMaxBinaryMessageBufferSize());
+			sct.setEL("maxIdleTimeout", s.getMaxIdleTimeout());
+			sct.setEL("maxTextMessageBufferSize", s.getMaxTextMessageBufferSize());
+			sct.setEL("requestURI", s.getRequestURI().toASCIIString());
+
+			// asyncRemote
+			javax.websocket.RemoteEndpoint.Async as = s.getAsyncRemote();
+			if (as != null) {
+				Struct sctAs = eng.getCreationUtil().createStruct();
+				sct.setEL("asyncRemote", sctAs);
+				sctAs.setEL("batchingAllowed", as.getBatchingAllowed());
+				sctAs.setEL("sendTimeout", as.getSendTimeout());
+			}
+
+			// BasicRemote
+			javax.websocket.RemoteEndpoint.Basic br = s.getBasicRemote();
+			if (br != null) {
+				Struct sctBr = eng.getCreationUtil().createStruct();
+				sct.setEL("basicRemote", sctBr);
+				sctBr.setEL("batchingAllowed", br.getBatchingAllowed());
+			}
+
+			// PathParameters
+			Map<String, String> pp = s.getPathParameters();
+			if (pp != null && pp.size() > 0) {
+				Struct sctPp = eng.getCreationUtil().createStruct();
+				sct.setEL("pathParameters", sctPp);
+				for (Entry<String, String> e: pp.entrySet()) {
+					sctPp.setEL(e.getKey(), e.getValue());
+				}
+			}
+
+			// RequestParameterMap
+			Map<String, List<String>> rpm = s.getRequestParameterMap();
+			if (rpm != null && rpm.size() > 0) {
+				Struct sctRpm = eng.getCreationUtil().createStruct();
+				sct.setEL("requestParameter", sctRpm);
+				for (Entry<String, List<String>> e: rpm.entrySet()) {
+					sctRpm.setEL(e.getKey(), e.getValue());
+				}
+			}
+
+			// UserPrincipal
+			Principal up = s.getUserPrincipal();
+			if (up != null) {
+				sct.setEL("userPrincipal", up.getName());
+			}
+
+			// UserProperties
+			Map<String, Object> up2 = s.getUserProperties();
+			if (up2 != null && up2.size() > 0) {
+				Struct sctUp = eng.getCreationUtil().createStruct();
+				sct.setEL("userProperties", sctUp);
+				for (Entry<String, Object> e: up2.entrySet()) {
+					sctUp.setEL(e.getKey(), e.getValue());
+				}
+			}
+
+			if (addRaw) sct.setEL("raw", s);
+			return sct;
+		}
+		catch (IllegalStateException ise) {
+			// this happens when a session get closed while reading the data, unlikely because we check "isOpen"
+			// before but possible.
+		}
+		return null;
 	}
 
 }
