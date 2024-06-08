@@ -444,71 +444,81 @@ public class WebSocketEndpointFactory {
 			for (Object o: sessions.values()) {
 				s = (javax.websocket.Session) o;
 
-				Struct sct = eng.getCreationUtil().createStruct();
-				arrSessions.appendEL(sct);
-				sct.setEL("id", s.getId());
-				sct.setEL("negotiatedSubprotocol", s.getNegotiatedSubprotocol());
-				sct.setEL("protocolVersion", s.getProtocolVersion());
-				sct.setEL("queryString", s.getQueryString());
-				sct.setEL("maxBinaryMessageBufferSize", s.getMaxBinaryMessageBufferSize());
-				sct.setEL("maxIdleTimeout", s.getMaxIdleTimeout());
-				sct.setEL("maxTextMessageBufferSize", s.getMaxTextMessageBufferSize());
-				sct.setEL("requestURI", s.getRequestURI().toASCIIString());
+				try {
+					// we only report open sessions
+					if (!s.isOpen()) continue;
 
-				// asyncRemote
-				javax.websocket.RemoteEndpoint.Async as = s.getAsyncRemote();
-				if (as != null) {
-					Struct sctAs = eng.getCreationUtil().createStruct();
-					sct.setEL("asyncRemote", sctAs);
-					sctAs.setEL("batchingAllowed", as.getBatchingAllowed());
-					sctAs.setEL("sendTimeout", as.getSendTimeout());
-				}
+					Struct sct = eng.getCreationUtil().createStruct();
 
-				// BasicRemote
-				javax.websocket.RemoteEndpoint.Basic br = s.getBasicRemote();
-				if (br != null) {
-					Struct sctBr = eng.getCreationUtil().createStruct();
-					sct.setEL("basicRemote", sctBr);
-					sctBr.setEL("batchingAllowed", br.getBatchingAllowed());
-				}
+					sct.setEL("id", s.getId());
+					sct.setEL("negotiatedSubprotocol", s.getNegotiatedSubprotocol());
+					sct.setEL("protocolVersion", s.getProtocolVersion());
+					sct.setEL("queryString", s.getQueryString());
+					sct.setEL("maxBinaryMessageBufferSize", s.getMaxBinaryMessageBufferSize());
+					sct.setEL("maxIdleTimeout", s.getMaxIdleTimeout());
+					sct.setEL("maxTextMessageBufferSize", s.getMaxTextMessageBufferSize());
+					sct.setEL("requestURI", s.getRequestURI().toASCIIString());
 
-				// PathParameters
-				Map<String, String> pp = s.getPathParameters();
-				if (pp != null && pp.size() > 0) {
-					Struct sctPp = eng.getCreationUtil().createStruct();
-					sct.setEL("pathParameters", sctPp);
-					for (Entry<String, String> e: pp.entrySet()) {
-						sctPp.setEL(e.getKey(), e.getValue());
+					// asyncRemote
+					javax.websocket.RemoteEndpoint.Async as = s.getAsyncRemote();
+					if (as != null) {
+						Struct sctAs = eng.getCreationUtil().createStruct();
+						sct.setEL("asyncRemote", sctAs);
+						sctAs.setEL("batchingAllowed", as.getBatchingAllowed());
+						sctAs.setEL("sendTimeout", as.getSendTimeout());
 					}
-				}
 
-				// RequestParameterMap
-				Map<String, List<String>> rpm = s.getRequestParameterMap();
-				if (rpm != null && rpm.size() > 0) {
-					Struct sctRpm = eng.getCreationUtil().createStruct();
-					sct.setEL("requestParameter", sctRpm);
-					for (Entry<String, List<String>> e: rpm.entrySet()) {
-						sctRpm.setEL(e.getKey(), e.getValue());
+					// BasicRemote
+					javax.websocket.RemoteEndpoint.Basic br = s.getBasicRemote();
+					if (br != null) {
+						Struct sctBr = eng.getCreationUtil().createStruct();
+						sct.setEL("basicRemote", sctBr);
+						sctBr.setEL("batchingAllowed", br.getBatchingAllowed());
 					}
-				}
 
-				// UserPrincipal
-				Principal up = s.getUserPrincipal();
-				if (up != null) {
-					sct.setEL("userPrincipal", up.getName());
-				}
-
-				// UserProperties
-				Map<String, Object> up2 = s.getUserProperties();
-				if (up2 != null && up2.size() > 0) {
-					Struct sctUp = eng.getCreationUtil().createStruct();
-					sct.setEL("userProperties", sctUp);
-					for (Entry<String, Object> e: up2.entrySet()) {
-						sctUp.setEL(e.getKey(), e.getValue());
+					// PathParameters
+					Map<String, String> pp = s.getPathParameters();
+					if (pp != null && pp.size() > 0) {
+						Struct sctPp = eng.getCreationUtil().createStruct();
+						sct.setEL("pathParameters", sctPp);
+						for (Entry<String, String> e: pp.entrySet()) {
+							sctPp.setEL(e.getKey(), e.getValue());
+						}
 					}
-				}
 
-				if (addRaw) sct.setEL("raw", s);
+					// RequestParameterMap
+					Map<String, List<String>> rpm = s.getRequestParameterMap();
+					if (rpm != null && rpm.size() > 0) {
+						Struct sctRpm = eng.getCreationUtil().createStruct();
+						sct.setEL("requestParameter", sctRpm);
+						for (Entry<String, List<String>> e: rpm.entrySet()) {
+							sctRpm.setEL(e.getKey(), e.getValue());
+						}
+					}
+
+					// UserPrincipal
+					Principal up = s.getUserPrincipal();
+					if (up != null) {
+						sct.setEL("userPrincipal", up.getName());
+					}
+
+					// UserProperties
+					Map<String, Object> up2 = s.getUserProperties();
+					if (up2 != null && up2.size() > 0) {
+						Struct sctUp = eng.getCreationUtil().createStruct();
+						sct.setEL("userProperties", sctUp);
+						for (Entry<String, Object> e: up2.entrySet()) {
+							sctUp.setEL(e.getKey(), e.getValue());
+						}
+					}
+
+					if (addRaw) sct.setEL("raw", s);
+					arrSessions.appendEL(sct);
+				}
+				catch (IllegalStateException ise) {
+					// this happens when a session get closed while reading the data, unlikely because we check "isOpen"
+					// before but possible.
+				}
 			}
 		}
 	}
