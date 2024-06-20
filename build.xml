@@ -10,32 +10,13 @@
   <property name="lib" location="source/java/libs"/>
   <property name="temp" location="temp"/>
   <property name="build" location="build"/>
-  <property name="dist"  location="dist"/>
+  <property name="dist"  location="target"/>
   <property name="src" location="source/java/src"/>
   <property name="srcImg" location="source/images"/>
   
   <property name="tld" location="source/tld"/>
   <property name="fld" location="source/fld"/>
-  <buildnumber file="build.number"/>
   
-
-    <scriptdef name="repl" language="javascript">
-     <attribute name="haystack" />
-     <attribute name="needle" />
-     <attribute name="repl" />
-     <attribute name="property" />
-     <![CDATA[
-      var text = attributes.get("haystack");
-      var needle = attributes.get("needle");
-      var repl = attributes.get("repl");
-      text=text.trim();
-
-      var regex = new RegExp(needle,'g');
-      text=text.replace(regex,repl);
-      project.setProperty(attributes.get("property"), text);
-     ]]>
-  </scriptdef>
-
   <path id="classpath">
     <fileset dir="${lib}">
       <include name="**/*.jar" />
@@ -74,13 +55,13 @@
 
     <echo file="${dist}/extension/META-INF/MANIFEST.MF">Manifest-Version: 1.0
 Built-Date: ${NOW}
-version: "${bundleversion}${build.number}${versionAppendix}"
+version: "${bundleversion}"
 id: "${id}"
 name: ${label}
 description: ${description}
 start-bundles: true
 release-type: ${releaseType}
-startup-hook: "{'class':'${class}','name':'${bundlename}','version':'${bundleversion}${build.number}${versionAppendix}'}"
+startup-hook: "{'class':'${class}','name':'${bundlename}','version':'${bundleversion}'}"
 lucee-core-version: "${luceeCoreVersion}"
 </echo>
 
@@ -104,19 +85,28 @@ lucee-core-version: "${luceeCoreVersion}"
  
     <!-- Put everything in ${build} into .jar file -->
     <jar 
-    	jarfile="${dist}/extension/jars/${bundlename}-${bundleversion}${build.number}${versionAppendix}.jar" basedir="${build}"  manifest="${src}/META-INF/MANIFEST.MF">
+    	jarfile="${dist}/extension/jars/${bundlename}-${bundleversion}.jar" basedir="${build}"  manifest="${src}/META-INF/MANIFEST.MF">
       <manifest>
-        <attribute name="Bundle-Version" value="${bundleversion}${build.number}${versionAppendix}"/>
+        <attribute name="Bundle-Version" value="${bundleversion}"/>
         <attribute name="Built-Date" value="${NOW}"/>
         <attribute name="Bundle-SymbolicName" value="${bundlename}"/>
       </manifest>
     </jar>
 
     <!-- copy the flds necessary -->
-    <loadfile property="c1" srcFile="${fld}/function.fld" />
-    <repl haystack="${c1}" needle="{bundle-name}" repl="${bundlename}" property="c2"/>
-    <repl haystack="${c2}" needle="{bundle-version}" repl="${bundleversion}${build.number}${versionAppendix}" property="c3"/>
-    <echo message="${c3}" file="${dist}/extension/flds/ws-functions.fld"/>
+    <copy file="${fld}/function.fld" tofile="${dist}/extension/flds/ws-functions.fld" />
+    <replaceregexp 
+      file="${dist}/extension/flds/ws-functions.fld" 
+      match="\{bundle-name\}" 
+      replace="${bundlename}" 
+      byline="true"/>
+    <replaceregexp 
+      file="${dist}/extension/flds/ws-functions.fld" 
+      match="\{bundle-version\}" 
+      replace="${bundleversion}" 
+      byline="true"/>
+
+
 
 
 
@@ -138,15 +128,15 @@ lucee-core-version: "${luceeCoreVersion}"
     </copy>
 
     <!-- Zip everything  -->
-     <zip destfile="${dist}/${bundlename}-${bundleversion}${build.number}${versionAppendix}.lex">
+     <zip destfile="${dist}/${filename}-${bundleversion}.lex">
         <zipfileset dir="${dist}/extension"/>
     </zip>
 		
   </target>
 
 	<target name="clean"  depends="dist" description="clean up" >
-		<!-- Delete the ${build} and ${dist} directory trees
-		<delete dir="${dist}/extension"/> -->
+		<!-- Delete the ${build} and ${dist} directory trees -->
+		<delete dir="${dist}/extension"/>
     <delete dir="${build}"/>
     <delete dir="${temp}"/>
 	</target>
