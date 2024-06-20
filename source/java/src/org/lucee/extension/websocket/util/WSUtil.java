@@ -36,7 +36,7 @@ import lucee.runtime.util.ClassUtil;
 import lucee.runtime.util.Decision;
 
 public class WSUtil {
-	private static final boolean LOG2CONSOLE = true;
+	private static final boolean LOG2CONSOLE = false;
 	public static final short TYPE_UNDEFINED = 0;
 	public static final short TYPE_JAKARTA = 1;
 	public static final short TYPE_JAVAX = 2;
