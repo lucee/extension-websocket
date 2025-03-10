@@ -144,7 +144,8 @@ public class WebSocketEndpointFactory {
 						WSUtil.info(cw, msg);
 						try {
 
-							Object oServerContainer = cw.getServletContext().getAttribute("javax.websocket.server.ServerContainer");
+							Object oServerContainer = cw.getServletContext()
+									.getAttribute((WSUtil.getContainerType(cw) == WSUtil.TYPE_JAKARTA ? "jakarta" : "javax") + ".websocket.server.ServerContainer");
 
 							if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAKARTA) {
 								props.put("lucee.websocket.endpoint", JAKARTA_ENDPOINT_CLASS);
