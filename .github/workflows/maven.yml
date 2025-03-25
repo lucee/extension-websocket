@@ -1,6 +1,8 @@
 name: Maven Build and Deploy
 
 on:
+  workflow_dispatch:
+  pull_request:
   push:
     branches:
       - master
@@ -60,6 +62,8 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    env:
+      DO_DEPLOY: "${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/master') }}"
     needs: [ test ]
     steps:
       - name: Checkout repository
@@ -91,6 +95,7 @@ jobs:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
 
       - name: Build and Deploy with Maven
+        if: ${{ env.DO_DEPLOY }}
         env:
           MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
