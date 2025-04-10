@@ -88,6 +88,9 @@ public class WSUtil {
 
 		String reqContextPath = null;
 
+		// hack workaround, if there's only one, just use it?
+		if (cs.getConfigWebs().length == 1) return cw;
+
 		// get a matching servletContext
 		for (ConfigWeb cw: cs.getConfigWebs()) {
 			if (reqContextPath == null) {
@@ -96,11 +99,9 @@ public class WSUtil {
 				else if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAVAX) reqURI = ((javax.websocket.Session) session).getRequestURI().toString();
 				reqContextPath = reqURI.substring(0, reqURI.indexOf("/ws"));
 			}
-
 			if (getContextPath(cw).equals(reqContextPath)) return cw;
 			// print.e(getContextPath(cw.getServletContext()) + " == " + reqContextPath);
 		}
-
 		return null;
 	}
 
@@ -108,15 +109,17 @@ public class WSUtil {
 		CFMLEngine eng = CFMLEngineFactory.getInstance();
 		ServletContext sc = cw.getServletContext();
 		try {
-			return (String) sc.getClass().getMethod("getContextPath", new Class[0]).invoke(sc, new Object[0]);
+			String contextPath = (String) sc.getClass().getMethod("getContextPath", new Class[0]).invoke(sc, new Object[0]);
+			if (contextPath != "") return contextPath;
 		}
 		catch (Exception e) {
-			// TODO extract from cw.getServletContext().getRealPath("/"));
-			String tmp = eng.getListUtil().last(sc.getRealPath("/"), "/", true);
-			tmp = eng.getListUtil().last(tmp, "\\", true);
-			if (tmp.equals("ROOT")) return "";
-			return "/" + tmp;
 		}
+		// TODO extract from cw.getServletContext().getRealPath("/"));
+		String tmp = sc.getRealPath("/");
+		tmp = eng.getResourceUtil().prettifyPath(tmp);  // convert windows paths
+		tmp = eng.getListUtil().last(tmp, "/", true);
+		if (tmp.equals("ROOT")) return "";
+		return "/" + tmp;
 	}
 
 	public static Mapping createMapping(PageContext pc, String componentPath) throws PageException, IOException {
@@ -365,49 +368,49 @@ public class WSUtil {
 
 	public static void trace(Config config, String msg) {
 		Log log = getLog(config);
-		if (!LOG2CONSOLE && log != null) log.trace("endpoint-factory", msg);
+		if (!LOG2CONSOLE && log != null) log.trace("websocket-endpoint-factory", msg);
 		else console(msg);
 	}
 
 	public static void trace(Config config, String msg, Throwable t) {
 		Log log = getLog(config);
-		if (!LOG2CONSOLE && log != null) log.log(Log.LEVEL_TRACE, "endpoint-factory", msg, t);
+		if (!LOG2CONSOLE && log != null) log.log(Log.LEVEL_TRACE, "websocket-endpoint-factory", msg, t);
 		else console(msg, t);
 	}
 
 	public static void info(Config config, String msg) {
 		Log log = getLog(config);
-		if (!LOG2CONSOLE && log != null) log.info("endpoint-factory", msg);
+		if (!LOG2CONSOLE && log != null) log.info("websocket-endpoint-factory", msg);
 		else console(msg);
 	}
 
 	public static void info(Config config, String msg, Throwable t) {
 		Log log = getLog(config);
-		if (!LOG2CONSOLE && log != null) log.log(Log.LEVEL_INFO, "endpoint-factory", msg, t);
+		if (!LOG2CONSOLE && log != null) log.log(Log.LEVEL_INFO, "websocket-endpoint-factory", msg, t);
 		else console(msg, t);
 	}
 
 	public static void warn(Config config, String msg) {
 		Log log = getLog(config);
-		if (!LOG2CONSOLE && log != null) log.warn("endpoint-factory", msg);
+		if (!LOG2CONSOLE && log != null) log.warn("websocket-endpoint-factory", msg);
 		else console(msg);
 	}
 
 	public static void warn(Config config, String msg, Throwable t) {
 		Log log = getLog(config);
-		if (!LOG2CONSOLE && log != null) log.log(Log.LEVEL_WARN, "endpoint-factory", msg, t);
+		if (!LOG2CONSOLE && log != null) log.log(Log.LEVEL_WARN, "websocket-endpoint-factory", msg, t);
 		else console(msg, t);
 	}
 
 	public static void error(Config config, Exception e) {
 		Log log = getLog(config);
-		if (!LOG2CONSOLE && log != null) log.error("endpoint-factory", e);
+		if (!LOG2CONSOLE && log != null) log.error("websocket-endpoint-factory", e);
 		else console(e);
 	}
 
 	public static void error(Config config, String msg, Throwable t) {
 		Log log = getLog(config);
-		if (!LOG2CONSOLE && log != null) log.log(Log.LEVEL_ERROR, "endpoint-factory", msg, t);
+		if (!LOG2CONSOLE && log != null) log.log(Log.LEVEL_ERROR, "websocket-endpoint-factory", msg, t);
 		else console(msg, t);
 	}
 

@@ -258,9 +258,9 @@ public class WebSocketEndpointFactory {
 			int count = 0;
 			while (alive && factory.isAlive()) {
 				count++;
-				if (count == 5) sleepTime = 1000; // after 2.5 seconds we increase to a 1 second intervall
-				if (count == 20) sleepTime = 10000; // after 10 seconds we increase to a 10 second intervall
-				else if (count == 30) sleepTime = 60000; // after an other 100 seconds we increase to a minute intervall
+				if (count == 5) sleepTime = 1000; // after 2.5 seconds we increase to a 1 second interval
+				if (count == 20) sleepTime = 10000; // after 10 seconds we increase to a 10 second interval
+				else if (count == 30) sleepTime = 60000; // after an other 100 seconds we increase to a minute interval
 				try {
 					factory.register();
 
