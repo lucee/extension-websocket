@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.lucee</groupId>
     <artifactId>websocket-extension</artifactId>
-    <version>3.0.0.15-SNAPSHOT</version>
+    <version>3.0.0.16-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>Websocket Extension</name>
 

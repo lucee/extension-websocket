@@ -565,7 +565,8 @@ public class WSUtil {
 			}
 			else {
 				ClassUtil util = CFMLEngineFactory.getInstance().getClassUtil();
-				if (util.isInstaneOf(oServerContainer.getClass(), "jakarta.websocket.server.ServerContainer")) containerType = TYPE_JAKARTA;
+				if (oServerContainer == null) containerType = TYPE_NOT_AVAILABLE;
+				else if (util.isInstaneOf(oServerContainer.getClass(), "jakarta.websocket.server.ServerContainer")) containerType = TYPE_JAKARTA;
 				else if (util.isInstaneOf(oServerContainer.getClass(), "javax.websocket.server.ServerContainer")) containerType = TYPE_JAVAX;
 				else containerType = TYPE_NOT_AVAILABLE;
 			}
