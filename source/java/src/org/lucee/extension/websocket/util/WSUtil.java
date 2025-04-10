@@ -88,9 +88,7 @@ public class WSUtil {
 
 		String reqContextPath = null;
 
-		// hack workaround, if there's only one, just use it?
-		if (cs.getConfigWebs().length == 1) return cw;
-
+		
 		// get a matching servletContext
 		for (ConfigWeb cw: cs.getConfigWebs()) {
 			if (reqContextPath == null) {
@@ -100,6 +98,9 @@ public class WSUtil {
 				reqContextPath = reqURI.substring(0, reqURI.indexOf("/ws"));
 			}
 			if (getContextPath(cw).equals(reqContextPath)) return cw;
+			// hack workaround, if there's only one, just use it?
+			if (cs.getConfigWebs().length == 1) return cw;
+
 			// print.e(getContextPath(cw.getServletContext()) + " == " + reqContextPath);
 		}
 		return null;
