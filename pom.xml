@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.lucee</groupId>
     <artifactId>websocket-extension</artifactId>
-    <version>3.0.0.17-SNAPSHOT</version>
+    <version>3.0.0.17-RC</version>
     <packaging>pom</packaging>
     <name>Websocket Extension</name>
 
@@ -17,7 +17,7 @@
         <class>org.lucee.extension.websocket.WebSocketEndpointFactory</class>
         <luceeCoreVersion>5.3.0.20</luceeCoreVersion>
         <releaseType>server</releaseType>
-        <label>Lucee WebSockets Extension</label>
+        <label>WebSockets Extension</label>
         <release.url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</release.url>
         <snapshot.url>https://oss.sonatype.org/content/repositories/snapshots/</snapshot.url>
     </properties>
