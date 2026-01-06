@@ -3,16 +3,12 @@ package org.lucee.extension.websocket.util;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.security.Principal;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-
-import javax.servlet.ServletContext;
-import javax.servlet.http.Cookie;
 
 import org.lucee.extension.websocket.WebSocketEndpointFactory;
 
@@ -70,9 +66,10 @@ public class WSUtil {
 
 	public static Component loadComponent(PageContext pc, PageSource ps, String callPath, boolean isRealPath, boolean silent, boolean executeConstr) throws PageException {
 		try {
-			Class<?> clazz = CFMLEngineFactory.getInstance().getClassUtil().loadClass("lucee.runtime.component.ComponentLoader");
-			Method method = clazz.getMethod("loadComponent", new Class[] { PageContext.class, PageSource.class, String.class, boolean.class, boolean.class, boolean.class });
-			return (Component) method.invoke(null, new Object[] { pc, ps, callPath, isRealPath, silent, executeConstr });
+			CFMLEngine eng = CFMLEngineFactory.getInstance();
+			Class<?> clazz = eng.getClassUtil().loadClass("lucee.runtime.component.ComponentLoader");
+			return (Component) eng.getClassUtil().callStaticMethod(clazz, "loadComponent",
+					new Object[] { pc, ps, callPath, isRealPath, silent, executeConstr });
 		}
 		catch (Exception e) {
 			throw CFMLEngineFactory.getInstance().getCastUtil().toPageException(e);
@@ -108,19 +105,26 @@ public class WSUtil {
 
 	private static String getContextPath(ConfigWeb cw) {
 		CFMLEngine eng = CFMLEngineFactory.getInstance();
-		ServletContext sc = cw.getServletContext();
+		Object sc = getServletContext(cw);
+		if (sc == null) return "";
 		try {
-			String contextPath = (String) sc.getClass().getMethod("getContextPath", new Class[0]).invoke(sc, new Object[0]);
-			if (contextPath != "") return contextPath;
+			String contextPath = (String) eng.getClassUtil().callMethod(sc, eng.getCastUtil().toKey("getContextPath"), new Object[] {});
+			if (contextPath != null && !contextPath.isEmpty()) return contextPath;
 		}
-		catch (Exception e) {
+		catch (PageException e) {
 		}
-		// TODO extract from cw.getServletContext().getRealPath("/"));
-		String tmp = sc.getRealPath("/");
-		tmp = eng.getResourceUtil().prettifyPath(tmp);  // convert windows paths
-		tmp = eng.getListUtil().last(tmp, "/", true);
-		if (tmp.equals("ROOT")) return "";
-		return "/" + tmp;
+		// Fallback: extract from getRealPath
+		try {
+			String tmp = (String) eng.getClassUtil().callMethod(sc, eng.getCastUtil().toKey("getRealPath"), new Object[] { "/" });
+			if (tmp == null) return "";
+			tmp = eng.getResourceUtil().prettifyPath(tmp);
+			tmp = eng.getListUtil().last(tmp, "/", true);
+			if ("ROOT".equals(tmp)) return "";
+			return "/" + tmp;
+		}
+		catch (PageException e) {
+			return "";
+		}
 	}
 
 	public static Mapping createMapping(PageContext pc, String componentPath) throws PageException, IOException {
@@ -329,9 +333,9 @@ public class WSUtil {
 	public static String replacePlaceholder(String path, Config config) {
 		if (path.indexOf('{') != -1) {
 			try {
-				Class<?> clazz = CFMLEngineFactory.getInstance().getClassUtil().loadClass("lucee.runtime.config.ConfigWebUtil");
-				Method m = clazz.getMethod("replacePlaceholder", new Class[] { String.class, Config.class });
-				return (String) m.invoke(null, new Object[] { path, config });
+				CFMLEngine eng = CFMLEngineFactory.getInstance();
+				Class<?> clazz = eng.getClassUtil().loadClass("lucee.runtime.config.ConfigWebUtil");
+				return (String) eng.getClassUtil().callStaticMethod(clazz, "replacePlaceholder", new Object[] { path, config });
 			}
 			catch (Exception e) {
 				error(config, e);
@@ -350,16 +354,27 @@ public class WSUtil {
 	private static PageContext createPageContext(final ConfigWeb cw, final Object session, OutputStream os, final String path, String qs, long timeout) throws PageException {
 		try {
 			CFMLEngine eng = CFMLEngineFactory.getInstance();
-			Class<?> clazz = eng.getClassUtil().loadClass("lucee.runtime.thread.ThreadUtil");
-			Class<?> clazzPairArray = eng.getClassUtil().loadClass("lucee.commons.lang.Pair[]");
-
-			Method method = clazz.getMethod("createPageContext", new Class[] { ConfigWeb.class, OutputStream.class, String.class, String.class, String.class, Cookie[].class,
-					clazzPairArray, byte[].class, clazzPairArray, Struct.class, boolean.class, long.class });
-
-			return (PageContext) method.invoke(null, new Object[] { cw, os, "", path, qs, new Cookie[0], null, null, null, null, true, timeout });
+			ClassUtil classUtil = eng.getClassUtil();
+			Class<?> clazz = classUtil.loadClass("lucee.runtime.thread.ThreadUtil");
+			Object emptyCookies = getEmptyCookieArray(classUtil);
+			return (PageContext) classUtil.callStaticMethod(clazz, "createPageContext",
+					new Object[] { cw, os, "", path, qs, emptyCookies, null, null, null, null, true, timeout });
 		}
 		catch (Exception e) {
 			throw CFMLEngineFactory.getInstance().getCastUtil().toPageException(e);
+		}
+	}
+
+	private static Object getEmptyCookieArray(ClassUtil classUtil) throws Exception {
+		try {
+			// Try jakarta first (Lucee 7+)
+			Class<?> cookieClass = classUtil.loadClass("jakarta.servlet.http.Cookie");
+			return java.lang.reflect.Array.newInstance(cookieClass, 0);
+		}
+		catch (Exception e) {
+			// Fall back to javax (Lucee 5/6)
+			Class<?> cookieClass = classUtil.loadClass("javax.servlet.http.Cookie");
+			return java.lang.reflect.Array.newInstance(cookieClass, 0);
 		}
 	}
 
@@ -550,10 +565,62 @@ public class WSUtil {
 		return defaultValue;
 	}
 
+	/**
+	 * Get ServletContext from ConfigWeb using reflection to avoid javax/jakarta linking issues
+	 */
+	public static Object getServletContext(ConfigWeb cw) {
+		try {
+			CFMLEngine eng = CFMLEngineFactory.getInstance();
+			return eng.getClassUtil().callMethod(cw, eng.getCastUtil().toKey("getServletContext"), new Object[] {});
+		}
+		catch (PageException e) {
+			return null;
+		}
+	}
+
+	/**
+	 * Get real path from ServletContext using reflection
+	 */
+	public static String getServletContextRealPath(ConfigWeb cw, String path) {
+		try {
+			Object sc = getServletContext(cw);
+			if (sc == null) return null;
+			CFMLEngine eng = CFMLEngineFactory.getInstance();
+			return (String) eng.getClassUtil().callMethod(sc, eng.getCastUtil().toKey("getRealPath"), new Object[] { path });
+		}
+		catch (PageException e) {
+			return null;
+		}
+	}
+
+	/**
+	 * Check if the ServletContext is a CLI implementation (should be skipped for websocket registration)
+	 */
+	public static boolean isCliServletContext(ConfigWeb cw) {
+		Object sc = getServletContext(cw);
+		if (sc == null) return true;
+		return "lucee.cli.servlet.ServletContextImpl".equals(sc.getClass().getName());
+	}
+
+	/**
+	 * Get attribute from ServletContext using reflection
+	 */
+	public static Object getServletContextAttribute(ConfigWeb cw, String name) {
+		try {
+			Object sc = getServletContext(cw);
+			if (sc == null) return null;
+			CFMLEngine eng = CFMLEngineFactory.getInstance();
+			return eng.getClassUtil().callMethod(sc, eng.getCastUtil().toKey("getAttribute"), new Object[] { name });
+		}
+		catch (PageException e) {
+			return null;
+		}
+	}
+
 	public static short getContainerType(ConfigWeb cw) {
 		if (containerType == TYPE_UNDEFINED) {
-			Object oServerContainer = cw.getServletContext().getAttribute("javax.websocket.server.ServerContainer");
-			if (oServerContainer == null) oServerContainer = cw.getServletContext().getAttribute("jakarta.websocket.server.ServerContainer");
+			Object oServerContainer = getServletContextAttribute(cw, "javax.websocket.server.ServerContainer");
+			if (oServerContainer == null) oServerContainer = getServletContextAttribute(cw, "jakarta.websocket.server.ServerContainer");
 
 			/*
 			 * if (oServerContainer == null) { print.e("+++++++++++++++++++++++++"); Enumeration e =
