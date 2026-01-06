@@ -574,7 +574,7 @@ public class WSUtil {
 			return eng.getClassUtil().callMethod(cw, eng.getCastUtil().toKey("getServletContext"), new Object[] {});
 		}
 		catch (PageException e) {
-			return null;
+			throw new RuntimeException("Failed to get ServletContext from ConfigWeb", e);
 		}
 	}
 
@@ -584,12 +584,11 @@ public class WSUtil {
 	public static String getServletContextRealPath(ConfigWeb cw, String path) {
 		try {
 			Object sc = getServletContext(cw);
-			if (sc == null) return null;
 			CFMLEngine eng = CFMLEngineFactory.getInstance();
 			return (String) eng.getClassUtil().callMethod(sc, eng.getCastUtil().toKey("getRealPath"), new Object[] { path });
 		}
 		catch (PageException e) {
-			return null;
+			throw new RuntimeException("Failed to get real path from ServletContext", e);
 		}
 	}
 
@@ -599,7 +598,8 @@ public class WSUtil {
 	public static boolean isCliServletContext(ConfigWeb cw) {
 		Object sc = getServletContext(cw);
 		if (sc == null) return true;
-		return "lucee.cli.servlet.ServletContextImpl".equals(sc.getClass().getName());
+		ClassUtil util = CFMLEngineFactory.getInstance().getClassUtil();
+		return util.isInstaneOf(sc.getClass(), "lucee.cli.servlet.ServletContextImpl");
 	}
 
 	/**
@@ -608,12 +608,11 @@ public class WSUtil {
 	public static Object getServletContextAttribute(ConfigWeb cw, String name) {
 		try {
 			Object sc = getServletContext(cw);
-			if (sc == null) return null;
 			CFMLEngine eng = CFMLEngineFactory.getInstance();
 			return eng.getClassUtil().callMethod(sc, eng.getCastUtil().toKey("getAttribute"), new Object[] { name });
 		}
 		catch (PageException e) {
-			return null;
+			throw new RuntimeException("Failed to get attribute [" + name + "] from ServletContext", e);
 		}
 	}
 
