@@ -6,7 +6,7 @@ writeOutput( "=== WebSocket Integration Test ===" & chr( 10 ) );
 
 try {
 	// Check websocket-client extension is available
-	if ( !functionExists( "CreateWebSocketClient" ) ) {
+	if ( !structKeyExists( getFunctionList(), "CreateWebSocketClient" ) ) {
 		throw( message="CreateWebSocketClient function not available - websocket-client extension not installed", type="TestSetupError" );
 	}
 
