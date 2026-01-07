@@ -99,13 +99,8 @@ try {
 	}
 }
 catch ( any e ) {
-	writeOutput( "FAILED: #e.message#" & chr( 10 ) );
-	if ( structKeyExists( e, "detail" ) && len( e.detail ) ) {
-		writeOutput( "Detail: #e.detail#" & chr( 10 ) );
-	}
-	if ( structKeyExists( e, "tagContext" ) && arrayLen( e.tagContext ) ) {
-		writeOutput( "At: #e.tagContext[ 1 ].template#:#e.tagContext[ 1 ].line#" & chr( 10 ) );
-	}
+	writeOutput( "FAILED:" & chr( 10 ) );
+	writeOutput( e.stacktrace );
 	cfheader( statuscode=500, statustext="Test Failed" );
 }
 </cfscript>

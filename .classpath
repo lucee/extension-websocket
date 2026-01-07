@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+	<classpathentry kind="src" path="source/java/src"/>
+	<classpathentry kind="lib" path="source/java/libs/jakarta.websocket-api-2.1.1.jar"/>
+	<classpathentry kind="lib" path="source/java/libs/jakarta.websocket-client-api-2.1.1.jar"/>
+	<classpathentry kind="lib" path="source/java/libs/javax.servlet.jar"/>
+	<classpathentry kind="lib" path="source/java/libs/javax.websocket-api-1.1.jar"/>
+	<classpathentry kind="lib" path="source/java/libs/lucee.jar"/>
+	<classpathentry kind="output" path="bin"/>
+</classpath>

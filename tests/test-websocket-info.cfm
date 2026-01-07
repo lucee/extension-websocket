@@ -26,11 +26,8 @@ try {
 	writeOutput( "Instances: #arrayLen( info.instances )#" & chr(10) );
 }
 catch ( any e ) {
-	writeOutput( "FAILED: #e.message#" & chr(10) );
-	if ( structKeyExists( e, "detail" ) && len( e.detail ) ) {
-		writeOutput( "Detail: #e.detail#" & chr(10) );
-	}
-	// Return 500 status to fail the CI
+	writeOutput( "FAILED:" & chr( 10 ) );
+	writeOutput( e.stacktrace );
 	cfheader( statuscode=500, statustext="Test Failed" );
 }
 </cfscript>
