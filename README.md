@@ -15,3 +15,7 @@ https://github.com/webonix/Lucee-websocket-commandbox
 Presentation at CFCAMP 2024
 
 https://www.cfcamp.org/resource/getting-started-with-lucee-6-websockets.html
+
+## Websocket Client Extension
+
+https://github.com/lucee/extension-websocket-client
