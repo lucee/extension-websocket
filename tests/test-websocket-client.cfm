@@ -22,14 +22,7 @@ try {
 	writeOutput( "Connecting to: #wsUrl#" & chr( 10 ) );
 
 	// Client listener component to receive messages
-	received = [];
-	clientListener = new component {
-		function onMessage( message ) {
-			arrayAppend( received, message );
-		}
-		function onClose() {}
-		function onError( type, cause ) {}
-	};
+	clientListener = new tests.ClientListener();
 
 	// Connect
 	ws = CreateWebSocketClient( wsUrl, clientListener );
@@ -76,6 +69,7 @@ try {
 	}
 
 	// Check client received echo
+	received = clientListener.getMessages();
 	writeOutput( chr( 10 ) & "=== Client Received ===" & chr( 10 ) );
 	writeOutput( "Messages: #arrayLen( received )#" & chr( 10 ) );
 	for ( msg in received ) {

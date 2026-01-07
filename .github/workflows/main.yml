@@ -170,45 +170,41 @@ jobs:
 
       - name: Test websocketInfo()
         id: test-websocket-info
+        continue-on-error: true
         run: |
           echo "Testing websocketInfo() on Lucee ${{ matrix.lucee }}..."
           RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8888/tests/test-websocket-info.cfm)
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | sed '$d')
           echo "$BODY"
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "ERROR: Test failed with HTTP $HTTP_CODE"
+          # Save output for summary
+          echo "$BODY" > /tmp/test-websocket-info.txt
+          if [ "$HTTP_CODE" != "200" ] || echo "$BODY" | grep -q "FAILED"; then
             echo "TEST_RESULT=❌ FAILED" >> $GITHUB_OUTPUT
-            exit 1
+            echo "TEST_FAILED=true" >> $GITHUB_OUTPUT
+          else
+            echo "Test passed!"
+            echo "TEST_RESULT=✅ PASSED" >> $GITHUB_OUTPUT
           fi
-          if echo "$BODY" | grep -q "FAILED"; then
-            echo "ERROR: Test assertion failed"
-            echo "TEST_RESULT=❌ FAILED" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-          echo "Test passed!"
-          echo "TEST_RESULT=✅ PASSED" >> $GITHUB_OUTPUT
 
       - name: Test WebSocket connection
         id: test-websocket-client
+        continue-on-error: true
         run: |
           echo "Testing WebSocket connection on Lucee ${{ matrix.lucee }}..."
           RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8888/tests/test-websocket-client.cfm)
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | sed '$d')
           echo "$BODY"
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "ERROR: Integration test failed with HTTP $HTTP_CODE"
+          # Save output for summary
+          echo "$BODY" > /tmp/test-websocket-client.txt
+          if [ "$HTTP_CODE" != "200" ] || echo "$BODY" | grep -q "FAILED"; then
             echo "CLIENT_TEST_RESULT=❌ FAILED" >> $GITHUB_OUTPUT
-            exit 1
+            echo "CLIENT_TEST_FAILED=true" >> $GITHUB_OUTPUT
+          else
+            echo "Integration test passed!"
+            echo "CLIENT_TEST_RESULT=✅ PASSED" >> $GITHUB_OUTPUT
           fi
-          if echo "$BODY" | grep -q "FAILED"; then
-            echo "ERROR: Integration test assertion failed"
-            echo "CLIENT_TEST_RESULT=❌ FAILED" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-          echo "Integration test passed!"
-          echo "CLIENT_TEST_RESULT=✅ PASSED" >> $GITHUB_OUTPUT
 
       - name: Write test summary
         if: always()
@@ -223,6 +219,27 @@ jobs:
           echo "| Servlet API | $([ '${{ matrix.lucee }}' = '6.2' ] && echo 'javax' || echo 'jakarta') |" >> $GITHUB_STEP_SUMMARY
           echo "| websocketInfo() | ${{ steps.test-websocket-info.outputs.TEST_RESULT || '⚠️ Unknown' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| WebSocket Connection | ${{ steps.test-websocket-client.outputs.CLIENT_TEST_RESULT || '⚠️ Unknown' }} |" >> $GITHUB_STEP_SUMMARY
+
+          # Include failure details in summary
+          if [ "${{ steps.test-websocket-info.outputs.TEST_FAILED }}" = "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### websocketInfo() Test Output" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat /tmp/test-websocket-info.txt >> $GITHUB_STEP_SUMMARY || true
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ steps.test-websocket-client.outputs.CLIENT_TEST_FAILED }}" = "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### WebSocket Connection Test Output" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat /tmp/test-websocket-client.txt >> $GITHUB_STEP_SUMMARY || true
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Fail if tests failed
+        if: steps.test-websocket-info.outputs.TEST_FAILED == 'true' || steps.test-websocket-client.outputs.CLIENT_TEST_FAILED == 'true'
+        run: exit 1
 
       - name: Stop Lucee Express
         if: always()
