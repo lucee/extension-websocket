@@ -3,7 +3,9 @@ name: Java CI Combined
 on: [push, pull_request, workflow_dispatch]
 
 jobs:
-  setup:
+  # Build extension (.lex file)
+  build-extension:
+    name: Build extension
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.extract-version.outputs.VERSION }}
@@ -21,78 +23,167 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.m2
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-maven-
+          key: maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: maven-
+
+      - name: Build extension with Maven
+        run: mvn -B -e clean install
 
       - name: Extract version number
         id: extract-version
         run: |
           VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
-          echo "::set-output name=VERSION::$VERSION"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Cache Lucee files
-        uses: actions/cache@v4
-        with:
-          path: ~/work/_actions/lucee/script-runner/main/lucee-download-cache
-          key: lucee-downloads
-
-      - name: Import GPG key
-        run: |
-          echo "$GPG_PRIVATE_KEY" | base64 --decode | gpg --batch --import
-        env:
-          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-
-  build-and-test:
-    runs-on: ubuntu-latest
-    needs: setup
-    env:
-      LUCEE_TEST_VERSIONS_JAKARTA: ${{ vars.LUCEE_TEST_VERSIONS_JAKARTA }}
-    strategy:
-      matrix:
-        lucee: ${{ fromJSON(vars.LUCEE_TEST_VERSIONS_JAKARTA) }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up JDK 11
-        uses: actions/setup-java@v4
-        with:
-          java-version: '11'
-          distribution: 'adopt'
-
-      - name: Build and Install with Maven
-        run: |
-          echo "------- Maven Install -------";
-          mvn -B -e -f pom.xml clean install
-
-      - name: Upload Artifact
+      - name: Upload extension
         uses: actions/upload-artifact@v4
         with:
-          name: websocket-lex-${{ matrix.lucee.version }}
+          name: extension-lex
           path: target/*.lex
+          retention-days: 1
 
-      - name: Checkout Lucee
+  # Test against multiple Lucee versions using Lucee Express
+  # - 6.2: javax servlet (Tomcat 9)
+  # - 7.0: jakarta servlet (Tomcat 11)
+  test:
+    name: Test - Lucee ${{ matrix.lucee }}
+    runs-on: ubuntu-latest
+    needs: [build-extension]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lucee: "6.2"
+            tomcat: "tomcat-9"
+            lucee_query: "6.2/all/jar"
+            java: "11"
+          - lucee: "7.0"
+            tomcat: "tomcat-11"
+            lucee_query: "7.0/all/jar"
+            java: "21"
+
+    steps:
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          repository: lucee/lucee
-          path: lucee
 
-      - name: Run Lucee Test Suite
-        uses: lucee/script-runner@main
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@v4
         with:
-          webroot: ${{ github.workspace }}/lucee/test
-          execute: /bootstrap-tests.cfm
-          luceeVersion: ${{ matrix.lucee.version }}
-          luceeVersionQuery: ${{ matrix.lucee.query }}
-          extensionDir: ${{ github.workspace }}/target
-        env:
-          testLabels: websocket
-          testAdditional: ${{ github.workspace }}/tests
+          java-version: '${{ matrix.java }}'
+          distribution: 'temurin'
+
+      - name: Download extension
+        uses: actions/download-artifact@v4
+        with:
+          name: extension-lex
+          path: extension
+
+      - name: Download Lucee Express template
+        run: |
+          EXPRESS_URL=$(curl -s https://update.lucee.org/rest/update/provider/expressTemplates | jq -r '.["${{ matrix.tomcat }}"]')
+          echo "Downloading Express template from: $EXPRESS_URL"
+          curl -L -o express-template.zip "$EXPRESS_URL"
+          unzip -q express-template.zip -d lucee-express
+
+      - name: Download Lucee ${{ matrix.lucee }} JAR
+        run: |
+          LUCEE_FILENAME=$(curl -s "https://update.lucee.org/rest/update/provider/latest/${{ matrix.lucee_query }}/filename")
+          LUCEE_FILENAME=$(echo "$LUCEE_FILENAME" | tr -d '"')
+          if [ -z "$LUCEE_FILENAME" ] || [[ "$LUCEE_FILENAME" == *"error"* ]]; then
+            echo "ERROR: Could not get Lucee filename from update API"
+            exit 1
+          fi
+          LUCEE_URL="https://cdn.lucee.org/$LUCEE_FILENAME"
+          echo "Downloading Lucee from: $LUCEE_URL"
+          curl -L -f -o lucee.jar "$LUCEE_URL"
+          if ! unzip -t lucee.jar > /dev/null 2>&1; then
+            echo "ERROR: Downloaded JAR is corrupt!"
+            exit 1
+          fi
+          rm -f lucee-express/lib/lucee-*.jar
+          cp lucee.jar lucee-express/lib/
+
+      - name: Install extension into Express
+        run: |
+          mkdir -p lucee-express/lucee-server/deploy
+          cp extension/*.lex lucee-express/lucee-server/deploy/
+
+      - name: Copy tests to webroot
+        run: |
+          cp -r tests lucee-express/webapps/ROOT/
+
+      - name: Configure Tomcat port
+        run: |
+          sed -i 's/port="8080"/port="8888"/g' lucee-express/conf/server.xml
+
+      - name: Warmup Lucee Express
+        run: |
+          cd lucee-express
+          echo "Running Lucee warmup..."
+          export LUCEE_ENABLE_WARMUP=true
+          ./bin/catalina.sh run
+          echo "Warmup complete"
+
+      - name: Start Lucee Express
+        run: |
+          cd lucee-express
+          echo "Starting Lucee Express..."
+          ./bin/catalina.sh start
+          echo "Lucee Express started"
+
+      - name: Wait for server to be ready
+        run: |
+          echo "Waiting for HTTP on port 8888..."
+          for i in {1..60}; do
+            if curl -s -o /dev/null -w "%{http_code}" http://localhost:8888/ | grep -q "200\|302\|404"; then
+              echo "HTTP ready after $i seconds"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Test websocketInfo()
+        run: |
+          echo "Testing websocketInfo() on Lucee ${{ matrix.lucee }}..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8888/tests/test-websocket-info.cfm)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          echo "$BODY"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: Test failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
+          if echo "$BODY" | grep -q "FAILED"; then
+            echo "ERROR: Test assertion failed"
+            exit 1
+          fi
+          echo "Test passed!"
+
+      - name: Stop Lucee Express
+        if: always()
+        run: |
+          cd lucee-express
+          ./bin/shutdown.sh || true
+
+      - name: Show catalina.out
+        if: always()
+        run: |
+          echo "=== catalina.out ==="
+          cat lucee-express/logs/catalina.out || echo "No catalina.out found"
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lucee-logs-${{ matrix.lucee }}
+          path: |
+            lucee-express/logs/
+            lucee-express/lucee-server/context/logs/
 
   deploy:
     runs-on: ubuntu-latest
-    needs: [build-and-test]
-    if: always() && needs.build-and-test.result == 'success'
+    needs: [build-extension, test]
+    if: always() && needs.test.result == 'success'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -107,9 +198,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.m2
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-maven-
+          key: maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: maven-
 
       - name: Import GPG key
         run: |
@@ -123,10 +213,10 @@ jobs:
           MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
-          if [[ "${{ needs.setup.outputs.version }}" == *-SNAPSHOT ]]; then
-            echo "------- Maven Deploy snapshot on ${{ github.event_name }} -------";
-            mvn -B -e -f pom.xml clean deploy --settings maven-settings.xml
+          if [[ "${{ needs.build-extension.outputs.version }}" == *-SNAPSHOT ]]; then
+            echo "------- Maven Deploy snapshot -------";
+            mvn -B -e clean deploy --settings maven-settings.xml
           else
-            echo "------- Maven Deploy release on ${{ github.event_name }} -------";
-            mvn -B -e -f pom.xml clean deploy -DperformRelease=true --settings maven-settings.xml
+            echo "------- Maven Deploy release -------";
+            mvn -B -e clean deploy -DperformRelease=true --settings maven-settings.xml
           fi
