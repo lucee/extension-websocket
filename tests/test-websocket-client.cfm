@@ -14,11 +14,8 @@ try {
 	info = websocketInfo();
 	writeOutput( "Server extension loaded, instances: #arrayLen( info.instances )#" & chr( 10 ) );
 
-	// Reset the test listener state
-	staticScope = getComponentMetadata( "websockets.TestListener" ).static;
-	staticScope.events = [];
-	staticScope.messages = [];
-	staticScope.clientCount = 0;
+	// Reset the test listener state via static method
+	invoke( "websockets.TestListener", "reset" );
 
 	// Determine websocket URL (same host/port as HTTP)
 	wsUrl = "ws://localhost:8888/ws/TestListener";
@@ -56,8 +53,8 @@ try {
 	// Wait for close to process
 	sleep( 500 );
 
-	// Check server-side events
-	results = staticScope;
+	// Check server-side events via static method
+	results = invoke( "websockets.TestListener", "getTestResults" );
 	writeOutput( chr( 10 ) & "=== Server Events ===" & chr( 10 ) );
 	writeOutput( "Events: #arrayToList( results.events )#" & chr( 10 ) );
 	writeOutput( "Messages received: #arrayLen( results.messages )#" & chr( 10 ) );
