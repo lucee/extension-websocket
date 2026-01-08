@@ -40,6 +40,7 @@ public class BaseWebSocketEndpoint {
 	private int gracePeriodFirstOpen;
 	private StringBuilder messageBuffer;
 	private static Object newerVersion;
+	private static ThreadLocal<Boolean> inNewerVersionCall = ThreadLocal.withInitial(() -> Boolean.FALSE);
 	private long idleTimeout = -1;
 	private int id;
 	private static AtomicInteger counter = new AtomicInteger(1);
@@ -227,44 +228,55 @@ public class BaseWebSocketEndpoint {
 		}
 	}
 
-	public void onError(Object session, Throwable t, String componentName) throws PageException, IOException {
-		// in case we have a newer version injected, we use that newver version
-		if (newerVersion != null) {
-			on(WSUtil.getConfig(factory.getConfigServer(), session), "onError", session, t, componentName);
-			return;
-		}
-
-		WSUtil.info(cw, "onError got involved for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "]", t);
-
-		PageContext pc = WSUtil.createPageContext(factory, cw, session, componentName);
-		setIdleTimeoutWhenNeeded(pc, componentName, session);
-		Struct cb = WSUtil.toCatchBlock(pc.getConfig(), t);
+	public void onError(Object session, Throwable t, String componentName) {
+		// error handlers must never throw - wrap everything in try-catch
 		try {
-			if (WSUtil.isOpen(cw, session)) {
-				WSUtil.info(cw, "calling [onError] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
-				Object res = invoke(pc, session, componentName, factory.ON_ERROR, new Object[] { new WSClient(factory, session), cb }, WSUtil.NULL);
-				if (WSUtil.isOpen(cw, session)) { // could be that the session was closed in invoke above
-					if (res != WSUtil.NULL) {
-						WSUtil.info(cw, "called [onError] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
-						WSUtil.send(cw, session, res);
-					}
-					else {
-						WSUtil.info(cw, "no [onError] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
-						WSUtil.send(cw, session, WSUtil.serializeJSON(pc, cb, false));
+			// in case we have a newer version injected, we use that newver version
+			if (newerVersion != null) {
+				on(WSUtil.getConfig(factory.getConfigServer(), session), "onError", session, t, componentName);
+				return;
+			}
+
+			WSUtil.info(cw, "onError got involved for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "]", t);
+
+			PageContext pc = WSUtil.createPageContext(factory, cw, session, componentName);
+			setIdleTimeoutWhenNeeded(pc, componentName, session);
+			Struct cb = WSUtil.toCatchBlock(pc.getConfig(), t);
+			try {
+				if (WSUtil.isOpen(cw, session)) {
+					WSUtil.info(cw, "calling [onError] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
+					Object res = invoke(pc, session, componentName, factory.ON_ERROR, new Object[] { new WSClient(factory, session), cb }, WSUtil.NULL);
+					if (WSUtil.isOpen(cw, session)) { // could be that the session was closed in invoke above
+						if (res != WSUtil.NULL) {
+							WSUtil.info(cw, "called [onError] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
+							WSUtil.send(cw, session, res);
+						}
+						else {
+							WSUtil.info(cw, "no [onError] for component [" + componentName + "] with session id [" + WSUtil.getId(cw, session) + "].");
+							WSUtil.send(cw, session, WSUtil.serializeJSON(pc, cb, false));
+						}
 					}
 				}
 			}
+			catch (Exception e) {
+				WSUtil.error(cw, e);
+				Struct ncb = WSUtil.toCatchBlock(pc.getConfig(), e);
+				ncb.setEL("origin", cb);
+				WSUtil.send(cw, session, WSUtil.serializeJSON(pc, ncb, false));
+			}
+			finally {
+				WSUtil.releasePageContext(pc);
+			}
 		}
-		catch (Exception e) {
-			WSUtil.error(cw, e);
-			Struct ncb = WSUtil.toCatchBlock(pc.getConfig(), e);
-			ncb.setEL("origin", cb);
-			WSUtil.send(cw, session, WSUtil.serializeJSON(pc, ncb, false));
+		catch (Throwable e) {
+			// last resort - log to console, never throw from error handler
+			System.err.println("WebSocket onError handler failed: " + e.getMessage());
+			e.printStackTrace();
+			if (t != null) {
+				System.err.println("Original error was: " + t.getMessage());
+				t.printStackTrace();
+			}
 		}
-		finally {
-			WSUtil.releasePageContext(pc);
-		}
-
 	}
 
 	public void onClose(Object session, Object closeReason, String componentName) throws PageException, IOException {

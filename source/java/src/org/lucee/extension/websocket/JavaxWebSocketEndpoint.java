@@ -38,7 +38,7 @@ public class JavaxWebSocketEndpoint extends BaseWebSocketEndpoint {
 	}
 
 	@OnError
-	public void onError(Session session, Throwable t, @PathParam("component-name") String componentName) throws PageException, IOException, EncodeException {
+	public void onError(Session session, Throwable t, @PathParam("component-name") String componentName) {
 		super.onError(session, t, componentName);
 	}
 
