@@ -331,17 +331,15 @@ public class WSUtil {
 	}
 
 	public static String replacePlaceholder(String path, Config config) {
-		if (path.indexOf('{') != -1) {
-			try {
-				CFMLEngine eng = CFMLEngineFactory.getInstance();
-				Class<?> clazz = eng.getClassUtil().loadClass("lucee.runtime.config.ConfigWebUtil");
-				return (String) eng.getClassUtil().callStaticMethod(clazz, "replacePlaceholder", new Object[] { path, config });
-			}
-			catch (Exception e) {
-				error(config, e);
-			}
+		if (path == null || path.indexOf('{') == -1) {
+			return path;
 		}
-		return path;
+		// Handle {lucee-config} placeholder - this is the only one used by this extension
+		if (path.startsWith("{lucee-config}")) {
+			return config.getConfigDir().getAbsolutePath() + path.substring(14);
+		}
+		// Fallback: try loader's parsePlaceHolder for system placeholders ({temp-directory}, etc)
+		return CFMLEngineFactory.getInstance().getResourceUtil().parsePlaceHolder(path);
 	}
 
 	public static PageContext createPageContext(WebSocketEndpointFactory factory, final ConfigWeb cw, final Object session, final String componentName) throws PageException {
