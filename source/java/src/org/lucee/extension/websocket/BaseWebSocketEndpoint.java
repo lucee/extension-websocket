@@ -11,6 +11,7 @@ import org.lucee.extension.websocket.client.WSClients;
 import org.lucee.extension.websocket.util.AsyncInvoker;
 import org.lucee.extension.websocket.util.GraceStop;
 import org.lucee.extension.websocket.util.WSUtil;
+import org.lucee.extension.websocket.util.aprint;
 
 import lucee.loader.engine.CFMLEngine;
 import lucee.loader.engine.CFMLEngineFactory;
@@ -80,6 +81,8 @@ public class BaseWebSocketEndpoint {
 	}
 
 	public static void inject(Object nv) {
+		aprint.o("inject() called with: " + nv + " (class: " + (nv != null ? nv.getClass().getName() : "null") + ")");
+		aprint.ds("inject() stack trace");
 		newerVersion = nv;
 	}
 

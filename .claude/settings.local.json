@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "Bash(dir:*)",
+      "Bash(jar tf:*)",
+      "Bash(javap:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh api:*)",
+      "Bash(mvn clean package:*)",
+      "Bash(tee:*)",
+      "Bash(gh run view:*)"
+    ]
+  }
+}

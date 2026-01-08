@@ -81,8 +81,8 @@ public class WebSocketEndpointFactory {
 	private void register() {
 		for (ConfigWeb cw: cs.getConfigWebs()) {
 			try {
-				// TODO handle ServletContextImpl better
-				if (cw != null && cw.getServletContext() != null && !(cw.getServletContext() instanceof lucee.cli.servlet.ServletContextImpl)) {
+				// Skip CLI servlet contexts
+				if (cw != null && !WSUtil.isCliServletContext(cw)) {
 					register(cw);
 				}
 			}
@@ -102,7 +102,7 @@ public class WebSocketEndpointFactory {
 			if (WSUtil.hasLogLevel(cw, Log.LEVEL_INFO) || data.mapping == null) {
 				PageContext pc = WSUtil.createPageContext(this, cw, null, null);
 				data.mapping = getComponentMapping(pc);
-				String msg = "register web context  [" + cw.getIdentification().getId() + " - " + cw.getServletContext().getRealPath("/")
+				String msg = "register web context  [" + cw.getIdentification().getId() + " - " + WSUtil.getServletContextRealPath(cw, "/")
 						+ "] mapping defined in the configuration is [" + data.mapping.getPhysical() + "]";
 				WSUtil.info(cs, msg);
 				WSUtil.info(cw, msg);
@@ -144,8 +144,8 @@ public class WebSocketEndpointFactory {
 						WSUtil.info(cw, msg);
 						try {
 
-							Object oServerContainer = cw.getServletContext()
-									.getAttribute((WSUtil.getContainerType(cw) == WSUtil.TYPE_JAKARTA ? "jakarta" : "javax") + ".websocket.server.ServerContainer");
+							Object oServerContainer = WSUtil.getServletContextAttribute(cw,
+									(WSUtil.getContainerType(cw) == WSUtil.TYPE_JAKARTA ? "jakarta" : "javax") + ".websocket.server.ServerContainer");
 
 							if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAKARTA) {
 								props.put("lucee.websocket.endpoint", JAKARTA_ENDPOINT_CLASS);
@@ -228,7 +228,7 @@ public class WebSocketEndpointFactory {
 		}
 		data.mapping = WSUtil.createMapping(pc, path);
 
-		WSUtil.info(cw, "init WebSocketEndpoint for web context [" + cw.getIdentification().getId() + " - " + cw.getServletContext().getRealPath("/")
+		WSUtil.info(cw, "init WebSocketEndpoint for web context [" + cw.getIdentification().getId() + " - " + WSUtil.getServletContextRealPath(cw, "/")
 				+ "] mapping defined in the configuration is [" + path + "], this is resolved to [" + data.mapping.getPhysical() + "]");
 
 		// request timeout

@@ -18,8 +18,8 @@
         <luceeCoreVersion>5.3.0.20</luceeCoreVersion>
         <releaseType>server</releaseType>
         <label>WebSockets Extension</label>
-        <release.url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</release.url>
-        <snapshot.url>https://oss.sonatype.org/content/repositories/snapshots/</snapshot.url>
+        <release.url>https://repo1.maven.org/maven2/</release.url>
+        <snapshot.url>https://central.sonatype.com/repository/maven-snapshots/</snapshot.url>
     </properties>
 
     <scm>
@@ -230,7 +230,7 @@
             <plugin>
               <groupId>org.sonatype.central</groupId>
               <artifactId>central-publishing-maven-plugin</artifactId>
-              <version>0.8.0</version>
+              <version>0.9.0</version>
               <extensions>true</extensions>
               <configuration>
                 <publishingServerId>ossrh</publishingServerId>
