@@ -18,12 +18,16 @@ try {
 
 	// Check version key exists (proves extension bundle loaded)
 	if ( structKeyExists( info, "version" ) ) {
-		writeOutput( "Extension version: #info.version#" & chr(10) );
+		writeOutput( "Extension version: #info.version#" & chr( 10 ) );
 	}
 
-	writeOutput( "SUCCESS: websocketInfo() works correctly" & chr(10) );
-	writeOutput( "Mapping: #info.mapping ?: 'not set'#" & chr(10) );
-	writeOutput( "Instances: #arrayLen( info.instances )#" & chr(10) );
+	writeOutput( "SUCCESS: websocketInfo() works correctly" & chr( 10 ) );
+	writeOutput( "Mapping: #info.mapping ?: 'not set'#" & chr( 10 ) );
+	writeOutput( "Instances: #arrayLen( info.instances )#" & chr( 10 ) );
+
+	// Debug: dump full config
+	writeOutput( chr( 10 ) & "=== Full websocketInfo() ===" & chr( 10 ) );
+	writeOutput( serializeJSON( info ) & chr( 10 ) );
 }
 catch ( any e ) {
 	writeOutput( "FAILED:" & chr( 10 ) );

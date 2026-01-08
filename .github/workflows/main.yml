@@ -168,6 +168,21 @@ jobs:
             sleep 1
           done
 
+      - name: Debug Lucee config
+        if: always()
+        run: |
+          echo "=== lucee-server/context structure ==="
+          find lucee-express/lucee-server/context -type f -name "*.json" -o -name "*.cfc" 2>/dev/null | head -50
+          echo ""
+          echo "=== websocket.json (if exists) ==="
+          cat lucee-express/lucee-server/context/websocket.json 2>/dev/null || echo "Not found"
+          echo ""
+          echo "=== .CFConfig.json (if exists) ==="
+          cat lucee-express/lucee-server/context/.CFConfig.json 2>/dev/null || echo "Not found"
+          echo ""
+          echo "=== websockets directory ==="
+          ls -la lucee-express/lucee-server/context/websockets/ 2>/dev/null || echo "Not found"
+
       - name: Test websocketInfo()
         id: test-websocket-info
         continue-on-error: true
