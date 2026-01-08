@@ -37,7 +37,7 @@ public class JakartaWebSocketEndpoint extends BaseWebSocketEndpoint {
 	}
 
 	@OnError
-	public void onError(Session session, Throwable t, @PathParam("component-name") String componentName) {
+	public void onError(Session session, Throwable t, @PathParam("component-name") String componentName) throws PageException, IOException, EncodeException {
 		super.onError(session, t, componentName);
 	}
 
