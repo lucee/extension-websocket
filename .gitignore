@@ -4,6 +4,7 @@ temp
 **/.DS_Store
 **/.svn/
 /*.project
+/.classpath
 va specific
 *.class
 target
@@ -14,3 +15,4 @@ target/*
 /bin/
 /test-output/
 /.claude
+*.bat

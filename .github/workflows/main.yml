@@ -115,7 +115,7 @@ jobs:
       - name: Download websocket-client extension
         run: |
           echo "Downloading websocket-client extension..."
-          curl -L -o websocket-client.lex "https://ext.lucee.org/websocket-client-extension-2.3.0.7.lex"
+          curl -L -o websocket-client.lex "https://ext.lucee.org/websocket-client-extension-2.3.0.8-SNAPSHOT.lex"
           ls -la websocket-client.lex
 
       - name: Install extensions into Express
