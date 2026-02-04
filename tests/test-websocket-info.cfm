@@ -1,0 +1,37 @@
+<cfscript>
+// Simple test to verify websocket extension is loaded and working
+try {
+	info = websocketInfo();
+
+	// Basic checks
+	if ( !isStruct( info ) ) {
+		throw( message="websocketInfo() did not return a struct", type="AssertionError" );
+	}
+
+	// Check required keys exist
+	requiredKeys = [ "mapping", "config", "instances" ];
+	for ( key in requiredKeys ) {
+		if ( !structKeyExists( info, key ) ) {
+			throw( message="websocketInfo() missing required key: #key#", type="AssertionError" );
+		}
+	}
+
+	// Check version key exists (proves extension bundle loaded)
+	if ( structKeyExists( info, "version" ) ) {
+		writeOutput( "Extension version: #info.version#" & chr( 10 ) );
+	}
+
+	writeOutput( "SUCCESS: websocketInfo() works correctly" & chr( 10 ) );
+	writeOutput( "Mapping: #info.mapping ?: 'not set'#" & chr( 10 ) );
+	writeOutput( "Instances: #arrayLen( info.instances )#" & chr( 10 ) );
+
+	// Debug: dump full config
+	writeOutput( chr( 10 ) & "=== Full websocketInfo() ===" & chr( 10 ) );
+	writeOutput( serializeJSON( info ) & chr( 10 ) );
+}
+catch ( any e ) {
+	writeOutput( "FAILED:" & chr( 10 ) );
+	writeOutput( e.stacktrace );
+	cfheader( statuscode=500, statustext="Test Failed" );
+}
+</cfscript>

@@ -4,6 +4,7 @@ temp
 **/.DS_Store
 **/.svn/
 /*.project
+/.classpath
 va specific
 *.class
 target
@@ -11,3 +12,7 @@ target/*
 *.DS_Store
 /cache
 .vscode/
+/bin/
+/test-output/
+/.claude
+*.bat
