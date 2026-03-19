@@ -1,8 +1,34 @@
 name: Java CI Combined
 
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      lucee-versions:
+        description: 'JSON array of Lucee version queries (e.g. ["6.2.5.34/snapshot/jar","6.2.6.0/snapshot/jar"])'
+        default: '["6.2/snapshot/jar","7.0/snapshot/jar"]'
+      dry-run:
+        description: 'Dry run - skip deploy to Maven'
+        type: boolean
+        default: false
 
 jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      lucee-matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Set Lucee test matrix
+        id: set-matrix
+        run: |
+          DEFAULT='["6.2/snapshot/jar","7.0/snapshot/jar"]'
+          MATRIX="${{ inputs.lucee-versions || '' }}"
+          if [ -z "$MATRIX" ]; then
+            MATRIX="$DEFAULT"
+          fi
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+
   # Build extension (.lex file)
   build-extension:
     name: Build extension
@@ -57,28 +83,39 @@ jobs:
   test:
     name: Test - Lucee ${{ matrix.lucee }}
     runs-on: ubuntu-latest
-    needs: [build-extension]
+    needs: [setup, build-extension]
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - lucee: "6.2"
-            tomcat: "tomcat-9"
-            lucee_query: "6.2/all/jar"
-            java: "11"
-          - lucee: "7.0"
-            tomcat: "tomcat-11"
-            lucee_query: "7.0/all/jar"
-            java: "21"
+        lucee: ${{ fromJSON(needs.setup.outputs.lucee-matrix) }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK ${{ matrix.java }}
+      - name: Determine Tomcat and Java version
+        id: config
+        run: |
+          MAJOR_MINOR=$(echo "${{ matrix.lucee }}" | grep -oE '^[0-9]+\.[0-9]+')
+          case "$MAJOR_MINOR" in
+            6.2)
+              echo "tomcat=tomcat-9" >> $GITHUB_OUTPUT
+              echo "java=11" >> $GITHUB_OUTPUT
+              ;;
+            7.0|7.1)
+              echo "tomcat=tomcat-11" >> $GITHUB_OUTPUT
+              echo "java=21" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "ERROR: Unknown Lucee major version: $MAJOR_MINOR"
+              exit 1
+              ;;
+          esac
+
+      - name: Set up JDK ${{ steps.config.outputs.java }}
         uses: actions/setup-java@v4
         with:
-          java-version: '${{ matrix.java }}'
+          java-version: '${{ steps.config.outputs.java }}'
           distribution: 'temurin'
 
       - name: Download extension
@@ -89,21 +126,23 @@ jobs:
 
       - name: Download Lucee Express template
         run: |
-          EXPRESS_URL=$(curl -s https://update.lucee.org/rest/update/provider/expressTemplates | jq -r '.["${{ matrix.tomcat }}"]')
+          EXPRESS_URL=$(curl -s https://update.lucee.org/rest/update/provider/expressTemplates | jq -r '.["${{ steps.config.outputs.tomcat }}"]')
           echo "Downloading Express template from: $EXPRESS_URL"
           curl -L -o express-template.zip "$EXPRESS_URL"
           unzip -q express-template.zip -d lucee-express
 
-      - name: Download Lucee ${{ matrix.lucee }} JAR
+      - name: Download Lucee JAR
+        id: lucee-jar
         run: |
-          LUCEE_FILENAME=$(curl -s "https://update.lucee.org/rest/update/provider/latest/${{ matrix.lucee_query }}/filename")
-          LUCEE_FILENAME=$(echo "$LUCEE_FILENAME" | tr -d '"')
-          if [ -z "$LUCEE_FILENAME" ] || [[ "$LUCEE_FILENAME" == *"error"* ]]; then
-            echo "ERROR: Could not get Lucee filename from update API"
+          LUCEE_URL=$(curl -s "https://update.lucee.org/rest/update/provider/latest/${{ matrix.lucee }}/url" | tr -d '"')
+          if [ -z "$LUCEE_URL" ] || [[ "$LUCEE_URL" == *"error"* ]]; then
+            echo "ERROR: Could not get Lucee URL from update API for query: ${{ matrix.lucee }}"
             exit 1
           fi
-          LUCEE_URL="https://cdn.lucee.org/$LUCEE_FILENAME"
-          echo "Downloading Lucee from: $LUCEE_URL"
+          LUCEE_FILENAME=$(basename "$LUCEE_URL")
+          LUCEE_VERSION=$(echo "$LUCEE_FILENAME" | sed 's/lucee-//;s/\.jar//')
+          echo "LUCEE_VERSION=$LUCEE_VERSION" >> $GITHUB_OUTPUT
+          echo "Downloading Lucee $LUCEE_VERSION from: $LUCEE_URL"
           curl -L -f -o lucee.jar "$LUCEE_URL"
           if ! unzip -t lucee.jar > /dev/null 2>&1; then
             echo "ERROR: Downloaded JAR is corrupt!"
@@ -228,10 +267,9 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Lucee Version | ${{ matrix.lucee }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Tomcat | ${{ matrix.tomcat }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Java | ${{ matrix.java }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Servlet API | $([ '${{ matrix.lucee }}' = '6.2' ] && echo 'javax' || echo 'jakarta') |" >> $GITHUB_STEP_SUMMARY
+          echo "| Lucee Version | \`${{ steps.lucee-jar.outputs.LUCEE_VERSION }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tomcat | ${{ steps.config.outputs.tomcat }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Java | ${{ steps.config.outputs.java }} |" >> $GITHUB_STEP_SUMMARY
           echo "| websocketInfo() | ${{ steps.test-websocket-info.outputs.TEST_RESULT || '⚠️ Unknown' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| WebSocket Connection | ${{ steps.test-websocket-client.outputs.CLIENT_TEST_RESULT || '⚠️ Unknown' }} |" >> $GITHUB_STEP_SUMMARY
 
@@ -280,7 +318,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: [build-extension, test]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && needs.test.result == 'success'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && needs.test.result == 'success' && !inputs.dry-run
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
