@@ -310,7 +310,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: lucee-logs-${{ matrix.lucee }}
+          name: lucee-logs-${{ steps.lucee-jar.outputs.LUCEE_VERSION }}
           path: |
             lucee-express/logs/
             lucee-express/lucee-server/context/logs/
