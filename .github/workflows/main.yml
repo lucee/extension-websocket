@@ -1,5 +1,8 @@
 name: Java CI Combined
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   push:
   pull_request:
@@ -21,12 +24,11 @@ jobs:
     steps:
       - name: Set Lucee test matrix
         id: set-matrix
+        env:
+          INPUT_VERSIONS: ${{ inputs.lucee-versions }}
         run: |
           DEFAULT='["6.2/snapshot/jar","7.0/snapshot/jar"]'
-          MATRIX="${{ inputs.lucee-versions || '' }}"
-          if [ -z "$MATRIX" ]; then
-            MATRIX="$DEFAULT"
-          fi
+          MATRIX="${INPUT_VERSIONS:-$DEFAULT}"
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
 
   # Build extension (.lex file)
