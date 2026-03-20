@@ -187,6 +187,7 @@ jobs:
           sed -i 's/port="8080"/port="8888"/g' lucee-express/conf/server.xml
 
       - name: Warmup Lucee Express
+        if: false  # disabled to test cold-start without warmup masking race conditions
         run: |
           cd lucee-express
           echo "Running Lucee warmup..."

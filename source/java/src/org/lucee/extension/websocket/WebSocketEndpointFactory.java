@@ -10,7 +10,6 @@ import org.lucee.extension.websocket.util.WSUtil;
 import org.lucee.extension.websocket.util.print;
 import org.osgi.framework.Bundle;
 
-import lucee.commons.io.log.Log;
 import lucee.commons.io.res.Resource;
 import lucee.loader.engine.CFMLEngine;
 import lucee.loader.engine.CFMLEngineFactory;
@@ -78,12 +77,117 @@ public class WebSocketEndpointFactory {
 		}
 	}
 
-	private void register() {
+	// get or create the Data entry for a web context (always succeeds, thread-safe)
+	private Data getOrCreateData(ConfigWeb cw) {
+		return datas.computeIfAbsent(cw.getIdentification().getId(), k -> new Data(cw));
+	}
+
+	// read config, create mapping, set timeouts for a web context
+	private void initContextComponents(Data data, PageContext pc) throws PageException, IOException {
+		Object[] arr = WSUtil.readConfig(pc);
+		data.configFile = (Resource) arr[0];
+		data.configuration = (Struct) arr[1];
+
+		// directory
+		String path = eng.getCastUtil().toString(data.configuration.get("directory", null), null);
+		if (eng.getStringUtil().isEmpty(path, true)) {
+			WSUtil.info(pc.getConfig(), "no [directory] setting found in configuration, using default location [" + WSUtil.DEFAULT_DIRECTORY + "]");
+			path = WSUtil.DEFAULT_DIRECTORY;
+			if (data.configuration == null) data.configuration = eng.getCreationUtil().createStruct();
+			data.configuration.setEL("directory", path);
+		}
+		else {
+			WSUtil.info(pc.getConfig(), "found [directory] setting in configuration, using [" + path + "]");
+		}
+		data.mapping = WSUtil.createMapping(pc, path);
+
+		// request timeout
+		long timeout = eng.getCastUtil().toLongValue(data.configuration.get("requestTimeout", null), 0);
+		if (timeout > 0L) data.requestTimeout = timeout * 1000;
+
+		// idle timeout
+		timeout = eng.getCastUtil().toLongValue(data.configuration.get("idleTimeout", null), 0);
+		if (timeout > 0L) data.idleTimeout = timeout * 1000;
+
+		ConfigWeb cw = pc.getConfig();
+		WSUtil.info(cw, "init WebSocketEndpoint for web context [" + cw.getIdentification().getId() + " - " + WSUtil.getServletContextRealPath(cw, "/")
+				+ "] mapping defined in the configuration is [" + path + "], this is resolved to [" + data.mapping.getPhysical() + "]");
+	}
+
+	// register the websocket endpoint with the servlet container (one-time, thread-safe)
+	private void registerEndpoint(ConfigWeb cw) throws PageException {
+		if (isEndpointRegistered) return;
+		synchronized (token) {
+			if (isEndpointRegistered) return;
+			Properties props = System.getProperties();
+			Object endpoint = props.get("lucee.websocket.endpoint");
+
+			// update
+			if (endpoint instanceof Class) {
+				String msg = "update existing WebSocketEndpoint with via injection";
+				WSUtil.info(cs, msg);
+				WSUtil.info(cw, msg);
+
+				CFMLEngine eng = CFMLEngineFactory.getInstance();
+				try {
+					if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAKARTA)
+						eng.getClassUtil().callStaticMethod((Class) endpoint, "inject", new Object[] { new JakartaWebSocketEndpoint() });
+					else if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAVAX)
+						eng.getClassUtil().callStaticMethod((Class) endpoint, "inject", new Object[] { new JavaxWebSocketEndpoint() });
+				}
+				catch (PageException e) {
+					print.e(e);
+					throw e;
+				}
+			}
+			// add
+			else {
+				String msg = "register WebSocketEndpoint with servlet container";
+				WSUtil.info(cs, msg);
+				WSUtil.info(cw, msg);
+				try {
+
+					Object oServerContainer = WSUtil.getServletContextAttribute(cw,
+							(WSUtil.getContainerType(cw) == WSUtil.TYPE_JAKARTA ? "jakarta" : "javax") + ".websocket.server.ServerContainer");
+
+					if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAKARTA) {
+						props.put("lucee.websocket.endpoint", JAKARTA_ENDPOINT_CLASS);
+						((jakarta.websocket.server.ServerContainer) oServerContainer).addEndpoint(JAKARTA_ENDPOINT_CLASS);
+					}
+					else if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAVAX) {
+						props.put("lucee.websocket.endpoint", JAVAX_ENDPOINT_CLASS);
+						((javax.websocket.server.ServerContainer) oServerContainer).addEndpoint(JAVAX_ENDPOINT_CLASS);
+					}
+					else {
+						if (oServerContainer == null)
+							throw eng.getExceptionUtil().createApplicationException("[javax.websocket.server.ServerContainer] not supported on this server.");
+						else throw eng.getExceptionUtil()
+								.createApplicationException("container [" + oServerContainer.getClass().getName()
+										+ "] not supported, only the following container are supported [" + jakarta.websocket.server.ServerContainer.class.getName() + ", "
+										+ javax.websocket.server.ServerContainer.class.getName() + "].");
+					}
+				}
+
+				catch (jakarta.websocket.DeploymentException | javax.websocket.DeploymentException e) {
+					// some container are not able/do not allow to update the endpoint, but this is needed when the
+					// extension updates, so we inject us in the old extension version
+					throw eng.getCastUtil().toPageException(e);
+				}
+			}
+			isEndpointRegistered = true;
+		}
+
+		// inject(Object nv)
+	}
+
+	// called by the Registrar thread to discover and register new web contexts
+	private void scanWebContexts() {
 		for (ConfigWeb cw: cs.getConfigWebs()) {
 			try {
 				// Skip CLI servlet contexts
 				if (cw != null && !WSUtil.isCliServletContext(cw)) {
-					register(cw);
+					getOrCreateData(cw);
+					registerEndpoint(cw);
 				}
 			}
 			catch (Exception e) {
@@ -92,99 +196,23 @@ public class WebSocketEndpointFactory {
 		}
 	}
 
-	private Data register(ConfigWeb cw) throws PageException {
-		Data data = datas.get(cw.getIdentification().getId());
-		if (data != null) return data;
-
-		datas.put(cw.getIdentification().getId(), data = new Data(cw));
-
-		try {
-			if (WSUtil.hasLogLevel(cw, Log.LEVEL_INFO) || data.mapping == null) {
-				PageContext pc = WSUtil.createPageContext(this, cw, null, null);
-				data.mapping = getComponentMapping(pc);
-				String msg = "register web context  [" + cw.getIdentification().getId() + " - " + WSUtil.getServletContextRealPath(cw, "/")
-						+ "] mapping defined in the configuration is [" + data.mapping.getPhysical() + "]";
-				WSUtil.info(cs, msg);
-				WSUtil.info(cw, msg);
-			}
-		}
-		catch (Exception e) {
-			WSUtil.error(cs, e);
-			WSUtil.error(cw, e);
-		}
-
-		if (!isEndpointRegistered) {
-			synchronized (token) {
-				if (!isEndpointRegistered) {
-					Properties props = System.getProperties();
-					Object endpoint = props.get("lucee.websocket.endpoint");
-
-					// update
-					if (endpoint instanceof Class) {
-						String msg = "update existing WebSocketEndpoint with via injection";
-						WSUtil.info(cs, msg);
-						WSUtil.info(cw, msg);
-
-						CFMLEngine eng = CFMLEngineFactory.getInstance();
-						try {
-							if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAKARTA)
-								eng.getClassUtil().callStaticMethod((Class) endpoint, "inject", new Object[] { new JakartaWebSocketEndpoint() });
-							else if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAVAX)
-								eng.getClassUtil().callStaticMethod((Class) endpoint, "inject", new Object[] { new JavaxWebSocketEndpoint() });
-						}
-						catch (PageException e) {
-							print.e(e);
-							throw e;
-						}
-					}
-					// add
-					else {
-						String msg = "register WebSocketEndpoint with servlet container";
-						WSUtil.info(cs, msg);
-						WSUtil.info(cw, msg);
-						try {
-
-							Object oServerContainer = WSUtil.getServletContextAttribute(cw,
-									(WSUtil.getContainerType(cw) == WSUtil.TYPE_JAKARTA ? "jakarta" : "javax") + ".websocket.server.ServerContainer");
-
-							if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAKARTA) {
-								props.put("lucee.websocket.endpoint", JAKARTA_ENDPOINT_CLASS);
-								((jakarta.websocket.server.ServerContainer) oServerContainer).addEndpoint(JAKARTA_ENDPOINT_CLASS);
-							}
-							else if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAVAX) {
-								props.put("lucee.websocket.endpoint", JAVAX_ENDPOINT_CLASS);
-								((javax.websocket.server.ServerContainer) oServerContainer).addEndpoint(JAVAX_ENDPOINT_CLASS);
-							}
-							else {
-								if (oServerContainer == null)
-									throw eng.getExceptionUtil().createApplicationException("[javax.websocket.server.ServerContainer] not supported on this server.");
-								else throw eng.getExceptionUtil()
-										.createApplicationException("container [" + oServerContainer.getClass().getName()
-												+ "] not supported, only the following container are supported [" + jakarta.websocket.server.ServerContainer.class.getName() + ", "
-												+ javax.websocket.server.ServerContainer.class.getName() + "].");
-							}
-						}
-
-						catch (jakarta.websocket.DeploymentException | javax.websocket.DeploymentException e) {
-							// some container are not able/do not allow to update the endpoint, but this is needed when the
-							// extension updates, so we inject us in the old extension version
-							throw eng.getCastUtil().toPageException(e);
-						}
-					}
-					isEndpointRegistered = true;
-				}
-
-			}
-
-		}
-
-		// inject(Object nv)
-
-		return data;
-	}
-
 	public Struct getInfo(ConfigWeb config, boolean addRaw) throws PageException {
-		return register(config).getInfo(addRaw);
+		Data data = getOrCreateData(config);
+		if (data.mapping == null) {
+			// lazy init — retry if previous attempt failed
+			PageContext pc = WSUtil.createPageContext(this, config, null, null);
+			try {
+				initContextComponents(data, pc);
+			}
+			catch (Exception e) {
+				throw eng.getCastUtil().toPageException(e);
+			}
+			finally {
+				WSUtil.releasePageContext(pc);
+			}
+		}
+		registerEndpoint(config);
+		return data.getInfo(addRaw);
 	}
 
 	public static WebSocketEndpointFactory getInstance() throws PageException {
@@ -207,38 +235,11 @@ public class WebSocketEndpointFactory {
 
 	public Mapping getComponentMapping(PageContext pc) throws PageException, IOException {
 		ConfigWeb cw = pc.getConfig();
-		Data data = register(cw);
-		if (data.mapping != null) {
-			return data.mapping;
+		Data data = getOrCreateData(cw);
+		if (data.mapping == null) {
+			// lazy init — retry if previous attempt failed
+			initContextComponents(data, pc);
 		}
-		Object[] arr = WSUtil.readConfig(pc);
-		data.configFile = (Resource) arr[0];
-		data.configuration = (Struct) arr[1];
-
-		// directory
-		String path = eng.getCastUtil().toString(data.configuration.get("directory", null), null);
-		if (eng.getStringUtil().isEmpty(path, true)) {
-			WSUtil.info(pc.getConfig(), "no [directory] setting found in configuration, using default location [" + WSUtil.DEFAULT_DIRECTORY + "]");
-			path = WSUtil.DEFAULT_DIRECTORY;
-			if (data.configuration == null) data.configuration = eng.getCreationUtil().createStruct();
-			data.configuration.setEL("directory", path);
-		}
-		else {
-			WSUtil.info(pc.getConfig(), "found [directory] setting in configuration, using [" + path + "]");
-		}
-		data.mapping = WSUtil.createMapping(pc, path);
-
-		WSUtil.info(cw, "init WebSocketEndpoint for web context [" + cw.getIdentification().getId() + " - " + WSUtil.getServletContextRealPath(cw, "/")
-				+ "] mapping defined in the configuration is [" + path + "], this is resolved to [" + data.mapping.getPhysical() + "]");
-
-		// request timeout
-		long timeout = eng.getCastUtil().toLongValue(data.configuration.get("requestTimeout", null), 0);
-		if (timeout > 0L) data.requestTimeout = timeout * 1000;
-
-		// idle timeout
-		timeout = eng.getCastUtil().toLongValue(data.configuration.get("idleTimeout", null), 0);
-		if (timeout > 0L) data.idleTimeout = timeout * 1000;
-
 		return data.mapping;
 	}
 
@@ -262,7 +263,7 @@ public class WebSocketEndpointFactory {
 				if (count == 20) sleepTime = 10000; // after 10 seconds we increase to a 10 second interval
 				else if (count == 30) sleepTime = 60000; // after an other 100 seconds we increase to a minute interval
 				try {
-					factory.register();
+					factory.scanWebContexts();
 
 				}
 				catch (Exception e) {
@@ -285,24 +286,24 @@ public class WebSocketEndpointFactory {
 		}
 	}
 
-	public java.util.Collection<Object> getSessions(ConfigWeb config) throws PageException {
-		return register(config).sessions.values();
+	public java.util.Collection<Object> getSessions(ConfigWeb config) {
+		return getOrCreateData(config).sessions.values();
 	}
 
-	public void setSessions(ConfigWeb config, Object session) throws PageException {
-		register(config).sessions.put(WSUtil.getId(config, session), session);
+	public void setSessions(ConfigWeb config, Object session) {
+		getOrCreateData(config).sessions.put(WSUtil.getId(config, session), session);
 	}
 
-	public void remSessions(ConfigWeb config, Object session) throws PageException {
-		register(config).sessions.remove(WSUtil.getId(config, session));
+	public void remSessions(ConfigWeb config, Object session) {
+		getOrCreateData(config).sessions.remove(WSUtil.getId(config, session));
 	}
 
-	public long getRequestTimeout(ConfigWeb cw) throws PageException {
-		return register(cw).requestTimeout;
+	public long getRequestTimeout(ConfigWeb cw) {
+		return getOrCreateData(cw).requestTimeout;
 	}
 
-	public long getIdleTimeout(ConfigWeb cw) throws PageException {
-		return register(cw).idleTimeout;
+	public long getIdleTimeout(ConfigWeb cw) {
+		return getOrCreateData(cw).idleTimeout;
 	}
 
 	private static class Data {
