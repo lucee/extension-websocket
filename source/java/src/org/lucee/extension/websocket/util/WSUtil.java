@@ -245,7 +245,13 @@ public class WSUtil {
 		if (!res.isFile()) {
 			info(pc.getConfig(), "creating configuration file at  [" + res + "], using default settings");
 			res.getParentResource().mkdirs();
-			eng.getIOUtil().write(res, "{\n\t\"directory\":\"" + DEFAULT_DIRECTORY + "\", \n\t\"requestTimeout\":50, \n\t\"idleTimeout\":300\n}", false, utf8);
+			try {
+				eng.getIOUtil().write(res, "{\n\t\"directory\":\"" + DEFAULT_DIRECTORY + "\", \n\t\"requestTimeout\":50, \n\t\"idleTimeout\":300\n}", false, utf8);
+			}
+			catch (IOException e) {
+				// another thread may have created the file concurrently, that's fine
+				if (!res.isFile()) throw e;
+			}
 		}
 
 		info(pc.getConfig(), "found configuration at  [" + res + "]");

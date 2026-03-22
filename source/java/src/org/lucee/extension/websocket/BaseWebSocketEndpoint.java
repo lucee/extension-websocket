@@ -80,6 +80,8 @@ public class BaseWebSocketEndpoint {
 	}
 
 	public static void inject(Object nv) {
+		// guard against self-delegation which causes infinite recursion
+		if (nv instanceof BaseWebSocketEndpoint) return;
 		newerVersion = nv;
 	}
 
