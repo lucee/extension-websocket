@@ -1,8 +1,5 @@
 name: Java CI Combined
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 on:
   push:
   pull_request:
@@ -39,16 +36,16 @@ jobs:
       version: ${{ steps.extract-version.outputs.VERSION }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up JDK 11
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '11'
 
       - name: Cache Maven packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.m2
           key: maven-${{ hashFiles('**/pom.xml') }}
@@ -73,7 +70,7 @@ jobs:
           echo "| Artifact | \`websocket-extension-${{ steps.extract-version.outputs.VERSION }}.lex\` |" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload extension
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: extension-lex
           path: target/*.lex
@@ -96,7 +93,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Determine Tomcat and Java version
         id: config
@@ -118,13 +115,13 @@ jobs:
           esac
 
       - name: Set up JDK ${{ steps.config.outputs.java }}
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '${{ steps.config.outputs.java }}'
           distribution: 'temurin'
 
       - name: Download extension
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: extension-lex
           path: extension
@@ -159,7 +156,7 @@ jobs:
       - name: Download websocket-client extension
         run: |
           echo "Downloading websocket-client extension..."
-          curl -L -o websocket-client.lex "https://ext.lucee.org/websocket-client-extension-2.3.0.8-SNAPSHOT.lex"
+          curl -L -o websocket-client.lex "https://ext.lucee.org/websocket-client-extension-2.3.0.9-SNAPSHOT.lex"
           ls -la websocket-client.lex
 
       - name: Install extensions into Express
@@ -314,7 +311,7 @@ jobs:
 
       - name: Upload logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lucee-logs-${{ steps.lucee-jar.outputs.LUCEE_VERSION }}
           path: |
@@ -327,16 +324,16 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master' && needs.test.result == 'success' && !inputs.dry-run
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up JDK 11
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '11'
 
       - name: Cache Maven packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.m2
           key: maven-${{ hashFiles('**/pom.xml') }}
