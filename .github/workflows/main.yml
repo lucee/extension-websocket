@@ -263,6 +263,24 @@ jobs:
             echo "CLIENT_TEST_RESULT=✅ PASSED" >> $GITHUB_OUTPUT
           fi
 
+      - name: Test idleTimeout (LDEV-6219)
+        id: test-idle-timeout
+        continue-on-error: true
+        run: |
+          echo "Testing idleTimeout on Lucee ${{ matrix.lucee }}..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8888/tests/test-idle-timeout.cfm)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          echo "$BODY"
+          echo "$BODY" > /tmp/test-idle-timeout.txt
+          if [ "$HTTP_CODE" != "200" ] || echo "$BODY" | grep -q "FAILED"; then
+            echo "IDLE_TEST_RESULT=❌ FAILED" >> $GITHUB_OUTPUT
+            echo "IDLE_TEST_FAILED=true" >> $GITHUB_OUTPUT
+          else
+            echo "Test passed!"
+            echo "IDLE_TEST_RESULT=✅ PASSED" >> $GITHUB_OUTPUT
+          fi
+
       - name: Write test summary
         if: always()
         run: |
@@ -275,6 +293,7 @@ jobs:
           echo "| Java | ${{ steps.config.outputs.java }} |" >> $GITHUB_STEP_SUMMARY
           echo "| websocketInfo() | ${{ steps.test-websocket-info.outputs.TEST_RESULT || '⚠️ Unknown' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| WebSocket Connection | ${{ steps.test-websocket-client.outputs.CLIENT_TEST_RESULT || '⚠️ Unknown' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| idleTimeout (LDEV-6219) | ${{ steps.test-idle-timeout.outputs.IDLE_TEST_RESULT || '⚠️ Unknown' }} |" >> $GITHUB_STEP_SUMMARY
 
           # Include failure details in summary
           if [ "${{ steps.test-websocket-info.outputs.TEST_FAILED }}" = "true" ]; then
@@ -293,8 +312,16 @@ jobs:
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
 
+          if [ "${{ steps.test-idle-timeout.outputs.IDLE_TEST_FAILED }}" = "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### idleTimeout Test Output (LDEV-6219)" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat /tmp/test-idle-timeout.txt >> $GITHUB_STEP_SUMMARY || true
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
       - name: Fail if tests failed
-        if: steps.test-websocket-info.outputs.TEST_FAILED == 'true' || steps.test-websocket-client.outputs.CLIENT_TEST_FAILED == 'true'
+        if: steps.test-websocket-info.outputs.TEST_FAILED == 'true' || steps.test-websocket-client.outputs.CLIENT_TEST_FAILED == 'true' || steps.test-idle-timeout.outputs.IDLE_TEST_FAILED == 'true'
         run: exit 1
 
       - name: Stop Lucee Express
