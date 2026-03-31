@@ -86,7 +86,7 @@ public class BaseWebSocketEndpoint {
 	}
 
 	private static Object on(ConfigWeb cw, String methodName, Object... args) throws PageException, IOException {
-		WSUtil.warn(cw, "calling [" + methodName + "] via reflection, Lucee restart needed!");
+		WSUtil.warn(cw, "calling [" + methodName + "] via reflection, the websocket endpoint can only be registered once per servlet engine lifecycle, a servlet engine restart is required for direct calls");
 		CFMLEngine eng = CFMLEngineFactory.getInstance();
 		return eng.getClassUtil().callMethod(newerVersion, eng.getCreationUtil().createKey(methodName), args);
 	}

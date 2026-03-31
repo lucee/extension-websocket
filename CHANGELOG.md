@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.0.0.21 (unreleased)
+
+- [LDEV-6221](https://luceeserver.atlassian.net/browse/LDEV-6221) — improve reflection fallback warning message to explain why and that a servlet engine restart is needed
+
 ## 3.0.0.20
 
 - [LDEV-6179](https://luceeserver.atlassian.net/browse/LDEV-6179) — fix race condition in `readConfig()` causing `this.mapping is null` on startup
