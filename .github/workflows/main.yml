@@ -486,11 +486,37 @@ jobs:
             echo "CONFIG_OVERRIDE_FAILED=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Run reflection hot-reinstall test
+      - name: Trigger Lucee engine restart (LDEV-6221 scenario)
+        id: restart-trigger
+        continue-on-error: true
+        run: |
+          # Calls cfadmin action="restart" — reloads the CFMLEngine while Tomcat
+          # stays up. Forces the fresh extension to hit its reflection fallback
+          # because Tomcat's endpoint registry still has the pre-restart class.
+          RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8888/tests/integration/trigger-lucee-restart.cfm)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          echo "$BODY"
+          if [ "$HTTP_CODE" != "200" ] || echo "$BODY" | grep -q "FAILED"; then
+            echo "RESTART_TRIGGER_FAILED=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Wait for Lucee to come back online
+        run: |
+          # Engine restart takes a few seconds — poll a trivial endpoint until 200
+          for i in {1..60}; do
+            if curl -s -o /dev/null -w "%{http_code}" http://localhost:8888/tests/test-websocket-info.cfm | grep -q "200"; then
+              echo "Lucee responding after $i attempts"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Run post-restart reflection round-trip
         id: reflection-test
         continue-on-error: true
         run: |
-          RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8888/tests/integration/test-reflection-reinstall.cfm)
+          RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8888/tests/integration/test-reflection-restart.cfm)
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | sed '$d')
           echo "$BODY"
