@@ -15,8 +15,8 @@ try {
 	writeOutput( "Connecting to: #wsUrl#" & chr( 10 ) );
 
 	// Connect two clients
-	client1 = new tests.ClientListener();
-	client2 = new tests.ClientListener();
+	client1 = new tests.integration.ClientListener();
+	client2 = new tests.integration.ClientListener();
 
 	ws1 = CreateWebSocketClient( wsUrl, client1 );
 	sleep( 500 );

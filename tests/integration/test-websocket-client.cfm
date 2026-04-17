@@ -25,7 +25,7 @@ try {
 	writeOutput( "Connecting to: #wsUrl#" & chr( 10 ) );
 
 	// Client listener component to receive messages
-	clientListener = new tests.ClientListener();
+	clientListener = new tests.integration.ClientListener();
 
 	// Connect
 	ws = CreateWebSocketClient( wsUrl, clientListener );

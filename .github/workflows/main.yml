@@ -167,11 +167,13 @@ jobs:
           echo "Extensions to deploy:"
           ls -la lucee-express/lucee-server/deploy/
 
-      - name: Copy test websocket listener
+      - name: Copy test websocket listeners
         run: |
-          # The websocket extension looks for listeners in {lucee-server}/websockets/
+          # The websocket extension looks for listeners in {lucee-server}/websockets/.
+          # Collect listeners from every websockets/ subfolder under tests/ so both
+          # top-level (server-only) and tests/integration/ listeners get picked up.
           mkdir -p lucee-express/lucee-server/context/websockets
-          cp tests/websockets/*.cfc lucee-express/lucee-server/context/websockets/
+          find tests -path '*/websockets/*.cfc' -exec cp {} lucee-express/lucee-server/context/websockets/ \;
           echo "WebSocket listeners:"
           ls -la lucee-express/lucee-server/context/websockets/
 
@@ -244,23 +246,57 @@ jobs:
             echo "TEST_RESULT=✅ PASSED" >> $GITHUB_OUTPUT
           fi
 
-      - name: Test WebSocket connection
-        id: test-websocket-client
+      - name: Run integration tests
+        id: integration-tests
         continue-on-error: true
         run: |
-          echo "Testing WebSocket connection on Lucee ${{ matrix.lucee }}..."
-          RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8888/tests/test-websocket-client.cfm)
-          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-          BODY=$(echo "$RESPONSE" | sed '$d')
-          echo "$BODY"
-          # Save output for summary
-          echo "$BODY" > /tmp/test-websocket-client.txt
-          if [ "$HTTP_CODE" != "200" ] || echo "$BODY" | grep -q "FAILED"; then
-            echo "CLIENT_TEST_RESULT=❌ FAILED" >> $GITHUB_OUTPUT
-            echo "CLIENT_TEST_FAILED=true" >> $GITHUB_OUTPUT
+          echo "Running integration tests on Lucee ${{ matrix.lucee }}..."
+          FAILED=false
+          RESULTS=""
+          for test in test-websocket-client test-lifecycle-callbacks test-return-value-send test-wsclient-broadcast test-wsclients-plural test-binary-send test-close; do
+            echo ""
+            echo "=============================================="
+            echo "Running ${test}"
+            echo "=============================================="
+            RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8888/tests/integration/${test}.cfm)
+            HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+            BODY=$(echo "$RESPONSE" | sed '$d')
+            echo "$BODY"
+            echo "$BODY" > /tmp/${test}.txt
+            if [ "$HTTP_CODE" != "200" ] || echo "$BODY" | grep -q "FAILED"; then
+              echo "${test}: ❌ FAILED"
+              RESULTS="${RESULTS}${test}: ❌ FAILED\n"
+              FAILED=true
+            else
+              echo "${test}: ✅ PASSED"
+              RESULTS="${RESULTS}${test}: ✅ PASSED\n"
+            fi
+          done
+          echo -e "$RESULTS" > /tmp/integration-results.txt
+          if [ "$FAILED" = "true" ]; then
+            echo "INTEGRATION_FAILED=true" >> $GITHUB_OUTPUT
+            echo "INTEGRATION_RESULT=❌ Some tests failed" >> $GITHUB_OUTPUT
           else
-            echo "Integration test passed!"
-            echo "CLIENT_TEST_RESULT=✅ PASSED" >> $GITHUB_OUTPUT
+            echo "INTEGRATION_RESULT=✅ All tests passed" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Dump WebSocket event logs
+        if: always()
+        run: |
+          # Event logs are written to the system temp dir by file-based test listeners
+          # (see LifecycleListener.cfc). Dumped on always() so failing tests have
+          # visible debug info in the CI log.
+          echo "=== WebSocket Test Event Logs ==="
+          found=false
+          for f in /tmp/ws-*-events.log; do
+            [ -f "$f" ] || continue
+            found=true
+            echo ""
+            echo "--- $f ---"
+            cat "$f"
+          done
+          if [ "$found" = "false" ]; then
+            echo "(no event logs found — no test wrote to /tmp/ws-*-events.log)"
           fi
 
       - name: Test idleTimeout (LDEV-6219)
@@ -292,7 +328,7 @@ jobs:
           echo "| Tomcat | ${{ steps.config.outputs.tomcat }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Java | ${{ steps.config.outputs.java }} |" >> $GITHUB_STEP_SUMMARY
           echo "| websocketInfo() | ${{ steps.test-websocket-info.outputs.TEST_RESULT || '⚠️ Unknown' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| WebSocket Connection | ${{ steps.test-websocket-client.outputs.CLIENT_TEST_RESULT || '⚠️ Unknown' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Integration Tests | ${{ steps.integration-tests.outputs.INTEGRATION_RESULT || '⚠️ Unknown' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| idleTimeout (LDEV-6219) | ${{ steps.test-idle-timeout.outputs.IDLE_TEST_RESULT || '⚠️ Unknown' }} |" >> $GITHUB_STEP_SUMMARY
 
           # Include failure details in summary
@@ -304,12 +340,21 @@ jobs:
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
 
-          if [ "${{ steps.test-websocket-client.outputs.CLIENT_TEST_FAILED }}" = "true" ]; then
+          if [ "${{ steps.integration-tests.outputs.INTEGRATION_FAILED }}" = "true" ]; then
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### WebSocket Connection Test Output" >> $GITHUB_STEP_SUMMARY
+            echo "### Integration Tests" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
-            cat /tmp/test-websocket-client.txt >> $GITHUB_STEP_SUMMARY || true
+            cat /tmp/integration-results.txt >> $GITHUB_STEP_SUMMARY || true
             echo '```' >> $GITHUB_STEP_SUMMARY
+            for test in test-websocket-client test-lifecycle-callbacks test-return-value-send test-wsclient-broadcast test-wsclients-plural test-binary-send test-close; do
+              if [ -f /tmp/${test}.txt ] && grep -q "FAILED" /tmp/${test}.txt; then
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "#### ${test}" >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
+                cat /tmp/${test}.txt >> $GITHUB_STEP_SUMMARY || true
+                echo '```' >> $GITHUB_STEP_SUMMARY
+              fi
+            done
           fi
 
           if [ "${{ steps.test-idle-timeout.outputs.IDLE_TEST_FAILED }}" = "true" ]; then
@@ -321,7 +366,7 @@ jobs:
           fi
 
       - name: Fail if tests failed
-        if: steps.test-websocket-info.outputs.TEST_FAILED == 'true' || steps.test-websocket-client.outputs.CLIENT_TEST_FAILED == 'true' || steps.test-idle-timeout.outputs.IDLE_TEST_FAILED == 'true'
+        if: steps.test-websocket-info.outputs.TEST_FAILED == 'true' || steps.integration-tests.outputs.INTEGRATION_FAILED == 'true' || steps.test-idle-timeout.outputs.IDLE_TEST_FAILED == 'true'
         run: exit 1
 
       - name: Stop Lucee Express
@@ -345,10 +390,198 @@ jobs:
             lucee-express/logs/
             lucee-express/lucee-server/context/logs/
 
+  test-config-override:
+    name: Test - Config override + reflection hot-reinstall
+    runs-on: ubuntu-latest
+    needs: [build-extension]
+    env:
+      LUCEE_LOGGING_FORCE_APPENDER: console
+      LUCEE_LOGGING_FORCE_LEVEL: info
+      LUCEE_WEBSOCKET_CONFIG: /tmp/ws-alt-config.json
+      LUCEE_ADMIN_PASSWORD: testadmin
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Download extension
+        uses: actions/download-artifact@v8
+        with:
+          name: extension-lex
+          path: extension
+
+      - name: Download Lucee Express template (tomcat-11)
+        run: |
+          EXPRESS_URL=$(curl -s https://update.lucee.org/rest/update/provider/expressTemplates | jq -r '.["tomcat-11"]')
+          curl -L -o express-template.zip "$EXPRESS_URL"
+          unzip -q express-template.zip -d lucee-express
+
+      - name: Download Lucee JAR (7.0 snapshot)
+        id: lucee-jar
+        run: |
+          LUCEE_URL=$(curl -s "https://update.lucee.org/rest/update/provider/latest/7.0/snapshot/jar/url" | tr -d '"')
+          LUCEE_VERSION=$(basename "$LUCEE_URL" | sed 's/lucee-//;s/\.jar//')
+          echo "LUCEE_VERSION=$LUCEE_VERSION" >> $GITHUB_OUTPUT
+          curl -L -f -o lucee.jar "$LUCEE_URL"
+          rm -f lucee-express/lib/lucee-*.jar
+          cp lucee.jar lucee-express/lib/
+
+      - name: Download websocket-client extension
+        run: curl -L -o websocket-client.lex "https://ext.lucee.org/websocket-client-extension-2.3.0.9-SNAPSHOT.lex"
+
+      - name: Install extensions into Express
+        run: |
+          mkdir -p lucee-express/lucee-server/deploy
+          cp extension/*.lex         lucee-express/lucee-server/deploy/
+          cp websocket-client.lex    lucee-express/lucee-server/deploy/
+
+      - name: Set up ALT config + listener path (no default listeners copied)
+        run: |
+          # Alt config file — the LUCEE_WEBSOCKET_CONFIG env var points the extension here
+          echo '{"directory":"/tmp/ws-alt-listeners/","requestTimeout":50,"idleTimeout":300}' > /tmp/ws-alt-config.json
+          # Alt listener directory — extension will look here (not in default {lucee-config}/websockets/)
+          mkdir -p /tmp/ws-alt-listeners
+          cp tests/websockets/TestListener.cfc /tmp/ws-alt-listeners/
+          echo "Alt config:"; cat /tmp/ws-alt-config.json
+          echo "Alt listeners:"; ls -la /tmp/ws-alt-listeners/
+
+      - name: Copy tests to webroot
+        run: cp -r tests lucee-express/webapps/ROOT/
+
+      - name: Configure Tomcat port
+        run: sed -i 's/port="8080"/port="8888"/g' lucee-express/conf/server.xml
+
+      - name: Resolve built .lex absolute path
+        run: |
+          LEX_FILE=$(ls $GITHUB_WORKSPACE/extension/*.lex | head -1)
+          echo "WS_EXT_LEX_PATH=$LEX_FILE" >> $GITHUB_ENV
+          echo "Resolved .lex to: $LEX_FILE"
+
+      - name: Start Lucee Express (with LUCEE_WEBSOCKET_CONFIG + LUCEE_ADMIN_PASSWORD in env)
+        run: cd lucee-express && ./bin/catalina.sh start
+
+      - name: Wait for server
+        run: |
+          for i in {1..60}; do
+            if curl -s -o /dev/null -w "%{http_code}" http://localhost:8888/ | grep -q "200\|302\|404"; then
+              echo "HTTP ready after $i seconds"; break
+            fi
+            sleep 1
+          done
+
+      - name: Run config-override test
+        id: config-override-test
+        continue-on-error: true
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8888/tests/integration/test-config-override.cfm)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          echo "$BODY"
+          if [ "$HTTP_CODE" != "200" ] || echo "$BODY" | grep -q "FAILED"; then
+            echo "CONFIG_OVERRIDE_FAILED=true" >> $GITHUB_OUTPUT
+          fi
+
+      # ------------------------------------------------------------------
+      # Reflection / Lucee-restart scenario — TEMPORARILY DISABLED.
+      #
+      # The post-restart path hits a real bug: after cfadmin action="restart",
+      # the new CFMLEngine's extension classloader can't load
+      # JakartaWebSocketEndpoint.class — `WebSocketEndpointFactory.scanWebContexts`
+      # and `registerEndpoint` both fail with "unable to load class path".
+      # The reflection fallback never gets a chance to patch the old static slot
+      # because the new classes themselves aren't loadable.
+      #
+      # The test CFMs (trigger-lucee-restart.cfm, test-reflection-restart.cfm)
+      # and this workflow block are kept in place for when the underlying bug
+      # is fixed — just re-enable the steps below.
+      #
+      # See LDEV-6221 and the companion catalina.out output in the earlier CI
+      # run logs for the stack trace.
+      # ------------------------------------------------------------------
+      # - name: Trigger Lucee engine restart (LDEV-6221 scenario)
+      #   id: restart-trigger
+      #   continue-on-error: true
+      #   run: |
+      #     RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8888/tests/integration/trigger-lucee-restart.cfm)
+      #     HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+      #     BODY=$(echo "$RESPONSE" | sed '$d')
+      #     echo "$BODY"
+      #     if [ "$HTTP_CODE" != "200" ] || echo "$BODY" | grep -q "FAILED"; then
+      #       echo "RESTART_TRIGGER_FAILED=true" >> $GITHUB_OUTPUT
+      #     fi
+      #
+      # - name: Wait for Lucee to come back online
+      #   run: |
+      #     for i in {1..60}; do
+      #       if curl -s -o /dev/null -w "%{http_code}" http://localhost:8888/tests/test-websocket-info.cfm | grep -q "200"; then
+      #         echo "Lucee responding after $i attempts"
+      #         break
+      #       fi
+      #       sleep 1
+      #     done
+      #
+      # - name: Run post-restart reflection round-trip
+      #   id: reflection-test
+      #   continue-on-error: true
+      #   run: |
+      #     RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8888/tests/integration/test-reflection-restart.cfm)
+      #     HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+      #     BODY=$(echo "$RESPONSE" | sed '$d')
+      #     echo "$BODY"
+      #     if [ "$HTTP_CODE" != "200" ] || echo "$BODY" | grep -q "FAILED"; then
+      #       echo "REFLECTION_FAILED=true" >> $GITHUB_OUTPUT
+      #     fi
+      #
+      # - name: Verify reflection warning in catalina.out
+      #   id: reflection-log-check
+      #   continue-on-error: true
+      #   run: |
+      #     if grep -q "calling \[.*\] via reflection" lucee-express/logs/catalina.out; then
+      #       echo "Reflection warning found — hot re-install exercised the fallback path"
+      #       grep "calling \[.*\] via reflection" lucee-express/logs/catalina.out
+      #     else
+      #       echo "REFLECTION_LOG_MISSING=true" >> $GITHUB_OUTPUT
+      #       echo "Reflection warning NOT found in catalina.out — hot re-install did not hit the fallback path"
+      #     fi
+
+      - name: Dump WebSocket event logs
+        if: always()
+        run: |
+          for f in /tmp/ws-*-events.log; do
+            [ -f "$f" ] || continue
+            echo "--- $f ---"; cat "$f"
+          done || echo "(no event logs found)"
+
+      - name: Stop Lucee Express
+        if: always()
+        run: cd lucee-express && ./bin/shutdown.sh || true
+
+      - name: Show catalina.out
+        if: always()
+        run: cat lucee-express/logs/catalina.out || echo "No catalina.out found"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lucee-logs-config-override-${{ steps.lucee-jar.outputs.LUCEE_VERSION }}
+          path: |
+            lucee-express/logs/
+            lucee-express/lucee-server/context/logs/
+
+      - name: Fail if any sub-test failed
+        if: steps.config-override-test.outputs.CONFIG_OVERRIDE_FAILED == 'true'
+        run: exit 1
+
   deploy:
     runs-on: ubuntu-latest
-    needs: [build-extension, test]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && needs.test.result == 'success' && !inputs.dry-run
+    needs: [build-extension, test, test-config-override]
+    if: github.event_name == 'workflow_dispatch' && needs.test.result == 'success' && needs.test-config-override.result == 'success' && !inputs.dry-run
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
