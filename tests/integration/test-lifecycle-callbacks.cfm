@@ -75,11 +75,13 @@ try {
 			arrayAppend( errors, "expected [#eventName#] #wanted# time(s), got #found#" );
 	}
 
-	// onFirstOpen must appear before first onOpen
-	firstOpenIdx = events.find( "onFirstOpen" );
-	firstOnOpenIdx = events.find( "onOpen" );
-	if ( firstOpenIdx == 0 || firstOnOpenIdx == 0 || firstOpenIdx >= firstOnOpenIdx )
-		arrayAppend( errors, "onFirstOpen should precede onOpen (got onFirstOpen@#firstOpenIdx#, onOpen@#firstOnOpenIdx#)" );
+	// NOTE: onFirstOpen runs on an async thread (AsyncInvoker in BaseWebSocketEndpoint),
+	// so its ordering relative to onOpen is NOT guaranteed. Presence + count is asserted
+	// above; we don't check relative ordering.
+
+	// onLastClose must be the last event (fires only after every client disconnects)
+	if ( arrayLen( events ) && events[ arrayLen( events ) ] != "onLastClose" )
+		arrayAppend( errors, "onLastClose should be the final event, got: " & events[ arrayLen( events ) ] );
 
 	if ( arrayLen( errors ) ) {
 		writeOutput( chr( 10 ) & "FAILED:" & chr( 10 ) );
