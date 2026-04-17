@@ -75,13 +75,10 @@ try {
 			arrayAppend( errors, "expected [#eventName#] #wanted# time(s), got #found#" );
 	}
 
-	// NOTE: onFirstOpen runs on an async thread (AsyncInvoker in BaseWebSocketEndpoint),
-	// so its ordering relative to onOpen is NOT guaranteed. Presence + count is asserted
-	// above; we don't check relative ordering.
-
-	// onLastClose must be the last event (fires only after every client disconnects)
-	if ( arrayLen( events ) && events[ arrayLen( events ) ] != "onLastClose" )
-		arrayAppend( errors, "onLastClose should be the final event, got: " & events[ arrayLen( events ) ] );
+	// NOTE: both onFirstOpen and onLastClose run on async threads (AsyncInvoker in
+	// BaseWebSocketEndpoint). Their ordering relative to onOpen / onClose is NOT
+	// guaranteed — onLastClose can race with the final onClose. We assert presence
+	// + count above; no relative-ordering assertions.
 
 	if ( arrayLen( errors ) ) {
 		writeOutput( chr( 10 ) & "FAILED:" & chr( 10 ) );
