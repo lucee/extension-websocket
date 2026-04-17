@@ -41,7 +41,7 @@ try {
 	if ( !bMsgs.find( "BCAST" ) )
 		arrayAppend( errors, "Client B did not receive BCAST; broadcast did not reach other clients" );
 	isOpenReply = "";
-	for ( var m in aMsgs ) {
+	for ( m in aMsgs ) {
 		if ( m.startsWith( "isOpen:" ) ) {
 			isOpenReply = m;
 			break;

@@ -390,10 +390,128 @@ jobs:
             lucee-express/logs/
             lucee-express/lucee-server/context/logs/
 
+  test-config-override:
+    name: Test - Config override (LUCEE_WEBSOCKET_CONFIG + alt directory)
+    runs-on: ubuntu-latest
+    needs: [build-extension]
+    env:
+      LUCEE_LOGGING_FORCE_APPENDER: console
+      LUCEE_LOGGING_FORCE_LEVEL: info
+      LUCEE_WEBSOCKET_CONFIG: /tmp/ws-alt-config.json
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Download extension
+        uses: actions/download-artifact@v8
+        with:
+          name: extension-lex
+          path: extension
+
+      - name: Download Lucee Express template (tomcat-11)
+        run: |
+          EXPRESS_URL=$(curl -s https://update.lucee.org/rest/update/provider/expressTemplates | jq -r '.["tomcat-11"]')
+          curl -L -o express-template.zip "$EXPRESS_URL"
+          unzip -q express-template.zip -d lucee-express
+
+      - name: Download Lucee JAR (7.0 snapshot)
+        id: lucee-jar
+        run: |
+          LUCEE_URL=$(curl -s "https://update.lucee.org/rest/update/provider/latest/7.0/snapshot/jar/url" | tr -d '"')
+          LUCEE_VERSION=$(basename "$LUCEE_URL" | sed 's/lucee-//;s/\.jar//')
+          echo "LUCEE_VERSION=$LUCEE_VERSION" >> $GITHUB_OUTPUT
+          curl -L -f -o lucee.jar "$LUCEE_URL"
+          rm -f lucee-express/lib/lucee-*.jar
+          cp lucee.jar lucee-express/lib/
+
+      - name: Download websocket-client extension
+        run: curl -L -o websocket-client.lex "https://ext.lucee.org/websocket-client-extension-2.3.0.9-SNAPSHOT.lex"
+
+      - name: Install extensions into Express
+        run: |
+          mkdir -p lucee-express/lucee-server/deploy
+          cp extension/*.lex         lucee-express/lucee-server/deploy/
+          cp websocket-client.lex    lucee-express/lucee-server/deploy/
+
+      - name: Set up ALT config + listener path (no default listeners copied)
+        run: |
+          # Alt config file — the LUCEE_WEBSOCKET_CONFIG env var points the extension here
+          echo '{"directory":"/tmp/ws-alt-listeners/","requestTimeout":50,"idleTimeout":300}' > /tmp/ws-alt-config.json
+          # Alt listener directory — extension will look here (not in default {lucee-config}/websockets/)
+          mkdir -p /tmp/ws-alt-listeners
+          cp tests/websockets/TestListener.cfc /tmp/ws-alt-listeners/
+          echo "Alt config:"; cat /tmp/ws-alt-config.json
+          echo "Alt listeners:"; ls -la /tmp/ws-alt-listeners/
+
+      - name: Copy tests to webroot
+        run: cp -r tests lucee-express/webapps/ROOT/
+
+      - name: Configure Tomcat port
+        run: sed -i 's/port="8080"/port="8888"/g' lucee-express/conf/server.xml
+
+      - name: Start Lucee Express (with LUCEE_WEBSOCKET_CONFIG in env)
+        run: cd lucee-express && ./bin/catalina.sh start
+
+      - name: Wait for server
+        run: |
+          for i in {1..60}; do
+            if curl -s -o /dev/null -w "%{http_code}" http://localhost:8888/ | grep -q "200\|302\|404"; then
+              echo "HTTP ready after $i seconds"; break
+            fi
+            sleep 1
+          done
+
+      - name: Run config-override test
+        id: config-override-test
+        continue-on-error: true
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8888/tests/integration/test-config-override.cfm)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          echo "$BODY"
+          if [ "$HTTP_CODE" != "200" ] || echo "$BODY" | grep -q "FAILED"; then
+            echo "CONFIG_OVERRIDE_FAILED=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Dump WebSocket event logs
+        if: always()
+        run: |
+          for f in /tmp/ws-*-events.log; do
+            [ -f "$f" ] || continue
+            echo "--- $f ---"; cat "$f"
+          done || echo "(no event logs found)"
+
+      - name: Stop Lucee Express
+        if: always()
+        run: cd lucee-express && ./bin/shutdown.sh || true
+
+      - name: Show catalina.out
+        if: always()
+        run: cat lucee-express/logs/catalina.out || echo "No catalina.out found"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lucee-logs-config-override-${{ steps.lucee-jar.outputs.LUCEE_VERSION }}
+          path: |
+            lucee-express/logs/
+            lucee-express/lucee-server/context/logs/
+
+      - name: Fail if test failed
+        if: steps.config-override-test.outputs.CONFIG_OVERRIDE_FAILED == 'true'
+        run: exit 1
+
   deploy:
     runs-on: ubuntu-latest
-    needs: [build-extension, test]
-    if: github.event_name == 'workflow_dispatch' && needs.test.result == 'success' && !inputs.dry-run
+    needs: [build-extension, test, test-config-override]
+    if: github.event_name == 'workflow_dispatch' && needs.test.result == 'success' && needs.test-config-override.result == 'success' && !inputs.dry-run
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
