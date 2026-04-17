@@ -490,68 +490,58 @@ jobs:
             echo "CONFIG_OVERRIDE_FAILED=true" >> $GITHUB_OUTPUT
           fi
 
-      # ------------------------------------------------------------------
-      # Reflection / Lucee-restart scenario — TEMPORARILY DISABLED.
-      #
-      # The post-restart path hits a real bug: after cfadmin action="restart",
-      # the new CFMLEngine's extension classloader can't load
-      # JakartaWebSocketEndpoint.class — `WebSocketEndpointFactory.scanWebContexts`
-      # and `registerEndpoint` both fail with "unable to load class path".
-      # The reflection fallback never gets a chance to patch the old static slot
-      # because the new classes themselves aren't loadable.
-      #
-      # The test CFMs (trigger-lucee-restart.cfm, test-reflection-restart.cfm)
-      # and this workflow block are kept in place for when the underlying bug
-      # is fixed — just re-enable the steps below.
-      #
-      # See LDEV-6221 and the companion catalina.out output in the earlier CI
-      # run logs for the stack trace.
-      # ------------------------------------------------------------------
-      # - name: Trigger Lucee engine restart (LDEV-6221 scenario)
-      #   id: restart-trigger
-      #   continue-on-error: true
-      #   run: |
-      #     RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8888/tests/integration/trigger-lucee-restart.cfm)
-      #     HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-      #     BODY=$(echo "$RESPONSE" | sed '$d')
-      #     echo "$BODY"
-      #     if [ "$HTTP_CODE" != "200" ] || echo "$BODY" | grep -q "FAILED"; then
-      #       echo "RESTART_TRIGGER_FAILED=true" >> $GITHUB_OUTPUT
-      #     fi
-      #
-      # - name: Wait for Lucee to come back online
-      #   run: |
-      #     for i in {1..60}; do
-      #       if curl -s -o /dev/null -w "%{http_code}" http://localhost:8888/tests/test-websocket-info.cfm | grep -q "200"; then
-      #         echo "Lucee responding after $i attempts"
-      #         break
-      #       fi
-      #       sleep 1
-      #     done
-      #
-      # - name: Run post-restart reflection round-trip
-      #   id: reflection-test
-      #   continue-on-error: true
-      #   run: |
-      #     RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8888/tests/integration/test-reflection-restart.cfm)
-      #     HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-      #     BODY=$(echo "$RESPONSE" | sed '$d')
-      #     echo "$BODY"
-      #     if [ "$HTTP_CODE" != "200" ] || echo "$BODY" | grep -q "FAILED"; then
-      #       echo "REFLECTION_FAILED=true" >> $GITHUB_OUTPUT
-      #     fi
-      #
-      # - name: Verify reflection warning in catalina.out
-      #   id: reflection-log-check
-      #   continue-on-error: true
-      #   run: |
-      #     if grep -q "calling \[.*\] via reflection" lucee-express/logs/catalina.out; then
-      #       echo "Reflection warning found — hot re-install exercised the fallback path"
-      #       grep "calling \[.*\] via reflection" lucee-express/logs/catalina.out
-      #     else
-      #       echo "REFLECTION_LOG_MISSING=true" >> $GITHUB_OUTPUT
-      #       echo "Reflection warning NOT found in catalina.out — hot re-install did not hit the fallback path"
-      #     fi
+      - name: Trigger Lucee engine restart (LDEV-6221 scenario)
+        id: restart-trigger
+        continue-on-error: true
+        run: |
+          # Calls cfadmin action="restart" — reloads the CFMLEngine while Tomcat
+          # stays up. Forces the fresh extension to hit its reflection fallback
+          # because Tomcat's endpoint registry still has the pre-restart class.
+          RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8888/tests/integration/trigger-lucee-restart.cfm)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          echo "$BODY"
+          if [ "$HTTP_CODE" != "200" ] || echo "$BODY" | grep -q "FAILED"; then
+            echo "RESTART_TRIGGER_FAILED=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Wait for Lucee to come back online
+        run: |
+          # Engine restart takes a few seconds — poll a trivial endpoint until 200
+          for i in {1..60}; do
+            if curl -s -o /dev/null -w "%{http_code}" http://localhost:8888/tests/test-websocket-info.cfm | grep -q "200"; then
+              echo "Lucee responding after $i attempts"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Run post-restart reflection round-trip
+        id: reflection-test
+        continue-on-error: true
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8888/tests/integration/test-reflection-restart.cfm)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          echo "$BODY"
+          if [ "$HTTP_CODE" != "200" ] || echo "$BODY" | grep -q "FAILED"; then
+            echo "REFLECTION_FAILED=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Verify reflection warning in catalina.out
+        id: reflection-log-check
+        continue-on-error: true
+        run: |
+          # The reflection fallback path logs "calling [onOpen] via reflection, servlet engine restart needed"
+          # (see BaseWebSocketEndpoint and LDEV-6221). If the hot re-install actually exercised this path,
+          # the warning will appear in catalina.out. If not, the round-trip test is lying.
+          if grep -q "calling \[.*\] via reflection" lucee-express/logs/catalina.out; then
+            echo "Reflection warning found — hot re-install exercised the fallback path"
+            grep "calling \[.*\] via reflection" lucee-express/logs/catalina.out
+          else
+            echo "REFLECTION_LOG_MISSING=true" >> $GITHUB_OUTPUT
+            echo "Reflection warning NOT found in catalina.out — hot re-install did not hit the fallback path"
+          fi
 
       - name: Dump WebSocket event logs
         if: always()
@@ -579,7 +569,7 @@ jobs:
             lucee-express/lucee-server/context/logs/
 
       - name: Fail if any sub-test failed
-        if: steps.config-override-test.outputs.CONFIG_OVERRIDE_FAILED == 'true'
+        if: steps.config-override-test.outputs.CONFIG_OVERRIDE_FAILED == 'true' || steps.reflection-test.outputs.REFLECTION_FAILED == 'true' || steps.reflection-log-check.outputs.REFLECTION_LOG_MISSING == 'true'
         run: exit 1
 
   deploy:
