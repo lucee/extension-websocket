@@ -128,16 +128,23 @@ public class WebSocketEndpointFactory {
 				WSUtil.info(cs, msg);
 				WSUtil.info(cw, msg);
 
-				CFMLEngine eng = CFMLEngineFactory.getInstance();
+				// Use plain java.lang.reflect instead of Lucee's ClassUtil.callStaticMethod
+				// The old endpoint Class lives on (Tomcat holds the ref) but its owning
+				// bundle's classloader may be stopped after cfadmin restart / extension
+				// hot-reinstall — Lucee's dynamic reflector reads bytecode via ASM which
+				// fails with "unable to load class path". Direct reflection works off the
+				// Class's own metadata, no bytecode re-read needed. LDEV-6221.
 				try {
+					Class<?> oldEndpointClass = (Class<?>) endpoint;
+					java.lang.reflect.Method inject = oldEndpointClass.getMethod("inject", Object.class);
 					if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAKARTA)
-						eng.getClassUtil().callStaticMethod((Class) endpoint, "inject", new Object[] { new JakartaWebSocketEndpoint() });
+						inject.invoke(null, new JakartaWebSocketEndpoint());
 					else if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAVAX)
-						eng.getClassUtil().callStaticMethod((Class) endpoint, "inject", new Object[] { new JavaxWebSocketEndpoint() });
+						inject.invoke(null, new JavaxWebSocketEndpoint());
 				}
-				catch (PageException e) {
+				catch (ReflectiveOperationException e) {
 					print.e(e);
-					throw e;
+					throw eng.getCastUtil().toPageException(e);
 				}
 			}
 			// add
