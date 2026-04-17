@@ -253,7 +253,7 @@ jobs:
           echo "Running integration tests on Lucee ${{ matrix.lucee }}..."
           FAILED=false
           RESULTS=""
-          for test in test-websocket-client test-lifecycle-callbacks test-return-value-send test-wsclient-broadcast test-wsclients-plural test-binary-send; do
+          for test in test-websocket-client test-lifecycle-callbacks test-return-value-send test-wsclient-broadcast test-wsclients-plural test-binary-send test-close; do
             echo ""
             echo "=============================================="
             echo "Running ${test}"
@@ -346,7 +346,7 @@ jobs:
             echo '```' >> $GITHUB_STEP_SUMMARY
             cat /tmp/integration-results.txt >> $GITHUB_STEP_SUMMARY || true
             echo '```' >> $GITHUB_STEP_SUMMARY
-            for test in test-websocket-client test-lifecycle-callbacks test-return-value-send test-wsclient-broadcast test-wsclients-plural test-binary-send; do
+            for test in test-websocket-client test-lifecycle-callbacks test-return-value-send test-wsclient-broadcast test-wsclients-plural test-binary-send test-close; do
               if [ -f /tmp/${test}.txt ] && grep -q "FAILED" /tmp/${test}.txt; then
                 echo "" >> $GITHUB_STEP_SUMMARY
                 echo "#### ${test}" >> $GITHUB_STEP_SUMMARY

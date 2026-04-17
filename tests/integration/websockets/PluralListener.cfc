@@ -26,6 +26,11 @@ component hint="Exercises the wsClients (plural) object passed to onFirstOpen" {
 			static.wsclientsRef.broadcast( "PLURAL_BCAST" );
 			return;
 		}
+		if ( arguments.message == "__CLOSE_ALL__" ) {
+			arguments.wsClient.send( "CLOSING_ALL" );
+			static.wsclientsRef.close();
+			return;
+		}
 		arguments.wsClient.send( "ECHO:" & arguments.message );
 	}
 

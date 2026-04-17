@@ -10,7 +10,12 @@ component hint="Calls wsClient.broadcast() when it receives the sentinel message
 			return;
 		}
 		if ( arguments.message == "__CHECK_ISOPEN__" ) {
-			arguments.wsClient.send( "isOpen:" & arguments.wsClient.isOpen() );
+			arguments.wsClient.send( "isOpen:" & arguments.wsClient.isOpen() & ",isClose:" & arguments.wsClient.isClose() );
+			return;
+		}
+		if ( arguments.message == "__CLOSE__" ) {
+			arguments.wsClient.send( "CLOSING" );
+			arguments.wsClient.close();
 			return;
 		}
 		arguments.wsClient.send( "ECHO:" & arguments.message );

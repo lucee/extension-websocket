@@ -40,8 +40,19 @@ try {
 		arrayAppend( errors, "Client A did not receive BCAST; broadcast did not reach sender" );
 	if ( !bMsgs.find( "BCAST" ) )
 		arrayAppend( errors, "Client B did not receive BCAST; broadcast did not reach other clients" );
-	if ( !aMsgs.find( "isOpen:true" ) && !aMsgs.find( "isOpen:YES" ) )
-		arrayAppend( errors, "isOpen did not report true during active callback; got: " & aMsgs.toJSON() );
+	isOpenReply = "";
+	for ( var m in aMsgs ) {
+		if ( m.startsWith( "isOpen:" ) ) {
+			isOpenReply = m;
+			break;
+		}
+	}
+	if ( isOpenReply == "" )
+		arrayAppend( errors, "expected isOpen reply during active callback; got: " & aMsgs.toJSON() );
+	else if ( !isOpenReply.contains( "isOpen:true" ) && !isOpenReply.contains( "isOpen:YES" ) )
+		arrayAppend( errors, "isOpen did not report true during active callback; got: " & isOpenReply );
+	else if ( !isOpenReply.contains( "isClose:false" ) && !isOpenReply.contains( "isClose:NO" ) )
+		arrayAppend( errors, "isClose did not report false during active callback; got: " & isOpenReply );
 
 	if ( arrayLen( errors ) ) {
 		writeOutput( chr( 10 ) & "FAILED:" & chr( 10 ) );
