@@ -13,8 +13,8 @@ try {
 
 	wsUrl = "ws://localhost:8888/ws/BinaryListener";
 
-	client = new tests.integration.BinaryClientListener();
-	ws = CreateWebSocketClient( wsUrl, client );
+	listener = new tests.integration.BinaryClientListener();
+	ws = CreateWebSocketClient( wsUrl, listener );
 	sleep( 500 );
 
 	// Trigger the listener to return binary
@@ -24,8 +24,8 @@ try {
 	ws.disconnect();
 	sleep( 500 );
 
-	binMsgs = client.getBinaryMessages();
-	textMsgs = client.getMessages();
+	binMsgs = listener.getBinaryMessages();
+	textMsgs = listener.getMessages();
 	writeOutput( "Binary messages received: " & arrayLen( binMsgs ) & chr( 10 ) );
 	writeOutput( "Text messages received: " & textMsgs.toJSON() & chr( 10 ) );
 

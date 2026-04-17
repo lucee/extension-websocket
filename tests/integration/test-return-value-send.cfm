@@ -9,8 +9,8 @@ try {
 		throw( message="CreateWebSocketClient not available", type="TestSetupError" );
 
 	wsUrl = "ws://localhost:8888/ws/ReturnValueListener";
-	client = new tests.integration.ClientListener();
-	ws = CreateWebSocketClient( wsUrl, client );
+	listener = new tests.integration.ClientListener();
+	ws = CreateWebSocketClient( wsUrl, listener );
 
 	// onOpen returns "WELCOME" — should be sent automatically
 	sleep( 500 );
@@ -22,7 +22,7 @@ try {
 	ws.disconnect();
 	sleep( 500 );
 
-	received = client.getMessages();
+	received = listener.getMessages();
 	writeOutput( "Received: " & received.toJSON() & chr( 10 ) );
 
 	errors = [];
