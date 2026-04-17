@@ -570,28 +570,26 @@ public class WSUtil {
 	}
 
 	/**
-	 * Get ServletContext from ConfigWeb using reflection to avoid javax/jakarta linking issues
+	 * Get ServletContext from ConfigWeb using plain java.lang.reflect to avoid
+	 * javax/jakarta linking issues AND to avoid Lucee's ClassUtil which ASM-reads
+	 * bytecode via the class's classloader — that fails after cfadmin restart /
+	 * bundle reload because the old classloader is stopped (LDEV-6221).
 	 */
 	public static Object getServletContext(ConfigWeb cw) {
 		try {
-			CFMLEngine eng = CFMLEngineFactory.getInstance();
-			return eng.getClassUtil().callMethod(cw, eng.getCastUtil().toKey("getServletContext"), new Object[] {});
+			return cw.getClass().getMethod("getServletContext").invoke(cw);
 		}
-		catch (PageException e) {
+		catch (ReflectiveOperationException e) {
 			throw new RuntimeException("Failed to get ServletContext from ConfigWeb", e);
 		}
 	}
 
-	/**
-	 * Get real path from ServletContext using reflection
-	 */
 	public static String getServletContextRealPath(ConfigWeb cw, String path) {
 		try {
 			Object sc = getServletContext(cw);
-			CFMLEngine eng = CFMLEngineFactory.getInstance();
-			return (String) eng.getClassUtil().callMethod(sc, eng.getCastUtil().toKey("getRealPath"), new Object[] { path });
+			return (String) sc.getClass().getMethod("getRealPath", String.class).invoke(sc, path);
 		}
-		catch (PageException e) {
+		catch (ReflectiveOperationException e) {
 			throw new RuntimeException("Failed to get real path from ServletContext", e);
 		}
 	}
@@ -602,20 +600,15 @@ public class WSUtil {
 	public static boolean isCliServletContext(ConfigWeb cw) {
 		Object sc = getServletContext(cw);
 		if (sc == null) return true;
-		ClassUtil util = CFMLEngineFactory.getInstance().getClassUtil();
-		return util.isInstaneOf(sc.getClass(), "lucee.cli.servlet.ServletContextImpl");
+		return "lucee.cli.servlet.ServletContextImpl".equals(sc.getClass().getName());
 	}
 
-	/**
-	 * Get attribute from ServletContext using reflection
-	 */
 	public static Object getServletContextAttribute(ConfigWeb cw, String name) {
 		try {
 			Object sc = getServletContext(cw);
-			CFMLEngine eng = CFMLEngineFactory.getInstance();
-			return eng.getClassUtil().callMethod(sc, eng.getCastUtil().toKey("getAttribute"), new Object[] { name });
+			return sc.getClass().getMethod("getAttribute", String.class).invoke(sc, name);
 		}
-		catch (PageException e) {
+		catch (ReflectiveOperationException e) {
 			throw new RuntimeException("Failed to get attribute [" + name + "] from ServletContext", e);
 		}
 	}
