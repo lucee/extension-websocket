@@ -391,13 +391,14 @@ jobs:
             lucee-express/lucee-server/context/logs/
 
   test-config-override:
-    name: Test - Config override (LUCEE_WEBSOCKET_CONFIG + alt directory)
+    name: Test - Config override + reflection hot-reinstall
     runs-on: ubuntu-latest
     needs: [build-extension]
     env:
       LUCEE_LOGGING_FORCE_APPENDER: console
       LUCEE_LOGGING_FORCE_LEVEL: info
       LUCEE_WEBSOCKET_CONFIG: /tmp/ws-alt-config.json
+      LUCEE_ADMIN_PASSWORD: testadmin
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -455,7 +456,13 @@ jobs:
       - name: Configure Tomcat port
         run: sed -i 's/port="8080"/port="8888"/g' lucee-express/conf/server.xml
 
-      - name: Start Lucee Express (with LUCEE_WEBSOCKET_CONFIG in env)
+      - name: Resolve built .lex absolute path
+        run: |
+          LEX_FILE=$(ls $GITHUB_WORKSPACE/extension/*.lex | head -1)
+          echo "WS_EXT_LEX_PATH=$LEX_FILE" >> $GITHUB_ENV
+          echo "Resolved .lex to: $LEX_FILE"
+
+      - name: Start Lucee Express (with LUCEE_WEBSOCKET_CONFIG + LUCEE_ADMIN_PASSWORD in env)
         run: cd lucee-express && ./bin/catalina.sh start
 
       - name: Wait for server
@@ -477,6 +484,33 @@ jobs:
           echo "$BODY"
           if [ "$HTTP_CODE" != "200" ] || echo "$BODY" | grep -q "FAILED"; then
             echo "CONFIG_OVERRIDE_FAILED=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run reflection hot-reinstall test
+        id: reflection-test
+        continue-on-error: true
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8888/tests/integration/test-reflection-reinstall.cfm)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          echo "$BODY"
+          if [ "$HTTP_CODE" != "200" ] || echo "$BODY" | grep -q "FAILED"; then
+            echo "REFLECTION_FAILED=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Verify reflection warning in catalina.out
+        id: reflection-log-check
+        continue-on-error: true
+        run: |
+          # The reflection fallback path logs "calling [onOpen] via reflection, servlet engine restart needed"
+          # (see BaseWebSocketEndpoint and LDEV-6221). If the hot re-install actually exercised this path,
+          # the warning will appear in catalina.out. If not, the round-trip test is lying.
+          if grep -q "calling \[.*\] via reflection" lucee-express/logs/catalina.out; then
+            echo "Reflection warning found — hot re-install exercised the fallback path"
+            grep "calling \[.*\] via reflection" lucee-express/logs/catalina.out
+          else
+            echo "REFLECTION_LOG_MISSING=true" >> $GITHUB_OUTPUT
+            echo "Reflection warning NOT found in catalina.out — hot re-install did not hit the fallback path"
           fi
 
       - name: Dump WebSocket event logs
@@ -504,8 +538,8 @@ jobs:
             lucee-express/logs/
             lucee-express/lucee-server/context/logs/
 
-      - name: Fail if test failed
-        if: steps.config-override-test.outputs.CONFIG_OVERRIDE_FAILED == 'true'
+      - name: Fail if any sub-test failed
+        if: steps.config-override-test.outputs.CONFIG_OVERRIDE_FAILED == 'true' || steps.reflection-test.outputs.REFLECTION_FAILED == 'true' || steps.reflection-log-check.outputs.REFLECTION_LOG_MISSING == 'true'
         run: exit 1
 
   deploy:
