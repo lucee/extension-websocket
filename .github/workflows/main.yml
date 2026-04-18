@@ -5,13 +5,17 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      deploy:
+        description: 'Deploy to Maven Central'
+        type: boolean
+        default: false
       lucee-versions:
         description: 'JSON array of Lucee version queries (e.g. ["6.2.5.34/snapshot/jar","6.2.6.0/snapshot/jar"])'
         default: '["6.2/snapshot/jar","7.0/snapshot/jar"]'
-      dry-run:
-        description: 'Dry run - skip deploy to Maven'
-        type: boolean
-        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   setup:
@@ -581,7 +585,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: [build-extension, test, test-config-override]
-    if: github.event_name == 'workflow_dispatch' && needs.test.result == 'success' && needs.test-config-override.result == 'success' && !inputs.dry-run
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy && needs.test.result == 'success' && needs.test-config-override.result == 'success'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
