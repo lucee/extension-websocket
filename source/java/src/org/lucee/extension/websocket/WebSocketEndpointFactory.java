@@ -52,6 +52,7 @@ public class WebSocketEndpointFactory {
 	private Object token = new Object();
 
 	public WebSocketEndpointFactory(Config config) {
+		print.e("[LDEV-6221-DIAG] WebSocketEndpointFactory ctor entered, config=" + (config == null ? "null" : config.getClass().getName()) + ", configHash=" + System.identityHashCode(config));
 		try {
 			eng = CFMLEngineFactory.getInstance();
 			Creation creator = eng.getCreationUtil();
@@ -70,8 +71,11 @@ public class WebSocketEndpointFactory {
 			// register();
 
 			instance = this;
+			print.e("[LDEV-6221-DIAG] WebSocketEndpointFactory ctor done, instance=" + System.identityHashCode(this) + ", propsClass="
+					+ System.getProperties().get("lucee.websocket.endpoint"));
 		}
 		catch (RuntimeException re) {
+			print.e("[LDEV-6221-DIAG] WebSocketEndpointFactory ctor threw: " + re);
 			this.re = re;
 			throw re;
 		}
@@ -121,6 +125,8 @@ public class WebSocketEndpointFactory {
 			if (isEndpointRegistered) return;
 			Properties props = System.getProperties();
 			Object endpoint = props.get("lucee.websocket.endpoint");
+			print.e("[LDEV-6221-DIAG] registerEndpoint entered, factory=" + System.identityHashCode(this) + ", cwId=" + cw.getIdentification().getId() + ", propsEndpoint="
+					+ endpoint + ", branch=" + (endpoint instanceof Class ? "INJECT" : "ADD"));
 
 			// update
 			if (endpoint instanceof Class) {
@@ -266,6 +272,7 @@ public class WebSocketEndpointFactory {
 
 		@Override
 		public void run() {
+			print.e("[LDEV-6221-DIAG] Registrar.run() starting, factory=" + System.identityHashCode(factory));
 			int sleepTime = 500;
 			int count = 0;
 			while (alive && factory.isAlive() && !factory.isEndpointRegistered()) {
@@ -274,10 +281,13 @@ public class WebSocketEndpointFactory {
 				if (count == 20) sleepTime = 10000; // after 10 seconds we increase to a 10 second interval
 				else if (count == 30) sleepTime = 60000; // after an other 100 seconds we increase to a minute interval
 				try {
+					int cwCount = factory.cs.getConfigWebs() == null ? -1 : factory.cs.getConfigWebs().length;
+					print.e("[LDEV-6221-DIAG] Registrar tick #" + count + ", cws=" + cwCount + ", registered=" + factory.isEndpointRegistered());
 					factory.scanWebContexts();
 
 				}
 				catch (Exception e) {
+					print.e("[LDEV-6221-DIAG] Registrar tick #" + count + " threw: " + e);
 				}
 				try {
 					WSUtil.trace(config, "checking for new web context to register, current interval [" + sleepTime + "ms]");
