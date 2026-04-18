@@ -89,7 +89,7 @@ jobs:
     needs: [setup, build-extension]
     env:
       LUCEE_LOGGING_FORCE_APPENDER: console
-      LUCEE_LOGGING_FORCE_LEVEL: info
+      LUCEE_LOGGING_FORCE_LEVEL: trace
     strategy:
       fail-fast: false
       matrix:
@@ -400,7 +400,7 @@ jobs:
     needs: [setup, build-extension]
     env:
       LUCEE_LOGGING_FORCE_APPENDER: console
-      LUCEE_LOGGING_FORCE_LEVEL: info
+      LUCEE_LOGGING_FORCE_LEVEL: trace
       LUCEE_WEBSOCKET_CONFIG: /tmp/ws-alt-config.json
       LUCEE_ADMIN_PASSWORD: testadmin
     strategy:

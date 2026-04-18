@@ -86,12 +86,14 @@ public class BaseWebSocketEndpoint {
 	}
 
 	private static Object on(ConfigWeb cw, String methodName, Object... args) throws PageException, IOException {
+		System.err.println("[LDEV-6221-DIAG] BaseWebSocketEndpoint.on() delegating [" + methodName + "] to newerVersion=" + System.identityHashCode(newerVersion));
 		WSUtil.warn(cw, "calling [" + methodName + "] via reflection, the websocket endpoint can only be registered once per servlet engine lifecycle, a servlet engine restart is required for direct calls");
 		CFMLEngine eng = CFMLEngineFactory.getInstance();
 		return eng.getClassUtil().callMethod(newerVersion, eng.getCreationUtil().createKey(methodName), args);
 	}
 
 	public void onOpen(Object session, Object endpointConfig, String componentName) throws PageException, IOException {
+		System.err.println("[LDEV-6221-DIAG] onOpen entered on " + this.getClass().getName() + "@" + System.identityHashCode(this) + ", newerVersion=" + (newerVersion == null ? "null" : System.identityHashCode(newerVersion)) + ", component=" + componentName);
 
 		// in case we have a newer version injected, we use that newver version
 		if (newerVersion != null) {
