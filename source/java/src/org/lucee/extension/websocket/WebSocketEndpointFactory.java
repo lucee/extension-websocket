@@ -48,7 +48,7 @@ public class WebSocketEndpointFactory {
 
 	//
 	private Map<String, Data> datas = new ConcurrentHashMap<>();
-	private boolean isEndpointRegistered = false;
+	private volatile boolean isEndpointRegistered = false;
 	private Object token = new Object();
 
 	public WebSocketEndpointFactory(Config config) {
@@ -236,6 +236,10 @@ public class WebSocketEndpointFactory {
 		return alive;
 	}
 
+	public boolean isEndpointRegistered() {
+		return isEndpointRegistered;
+	}
+
 	public ConfigServer getConfigServer() {
 		return cs;
 	}
@@ -264,7 +268,7 @@ public class WebSocketEndpointFactory {
 		public void run() {
 			int sleepTime = 500;
 			int count = 0;
-			while (alive && factory.isAlive()) {
+			while (alive && factory.isAlive() && !factory.isEndpointRegistered()) {
 				count++;
 				if (count == 5) sleepTime = 1000; // after 2.5 seconds we increase to a 1 second interval
 				if (count == 20) sleepTime = 10000; // after 10 seconds we increase to a 10 second interval
