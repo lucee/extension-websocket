@@ -395,22 +395,45 @@ jobs:
             lucee-express/lucee-server/context/logs/
 
   test-config-override:
-    name: Test - Config override + reflection hot-reinstall
+    name: Test - Config override + reflection hot-reinstall (Lucee ${{ matrix.lucee }})
     runs-on: ubuntu-latest
-    needs: [build-extension]
+    needs: [setup, build-extension]
     env:
       LUCEE_LOGGING_FORCE_APPENDER: console
       LUCEE_LOGGING_FORCE_LEVEL: info
       LUCEE_WEBSOCKET_CONFIG: /tmp/ws-alt-config.json
       LUCEE_ADMIN_PASSWORD: testadmin
+    strategy:
+      fail-fast: false
+      matrix:
+        lucee: ${{ fromJSON(needs.setup.outputs.lucee-matrix) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up JDK 21
+      - name: Determine Tomcat and Java version
+        id: config
+        run: |
+          MAJOR_MINOR=$(echo "${{ matrix.lucee }}" | grep -oE '^[0-9]+\.[0-9]+')
+          case "$MAJOR_MINOR" in
+            6.2)
+              echo "tomcat=tomcat-9" >> $GITHUB_OUTPUT
+              echo "java=11" >> $GITHUB_OUTPUT
+              ;;
+            7.0|7.1)
+              echo "tomcat=tomcat-11" >> $GITHUB_OUTPUT
+              echo "java=21" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "ERROR: Unknown Lucee major version: $MAJOR_MINOR"
+              exit 1
+              ;;
+          esac
+
+      - name: Set up JDK ${{ steps.config.outputs.java }}
         uses: actions/setup-java@v5
         with:
-          java-version: '21'
+          java-version: '${{ steps.config.outputs.java }}'
           distribution: 'temurin'
 
       - name: Download extension
@@ -419,16 +442,17 @@ jobs:
           name: extension-lex
           path: extension
 
-      - name: Download Lucee Express template (tomcat-11)
+      - name: Download Lucee Express template
         run: |
-          EXPRESS_URL=$(curl -s https://update.lucee.org/rest/update/provider/expressTemplates | jq -r '.["tomcat-11"]')
+          EXPRESS_URL=$(curl -s https://update.lucee.org/rest/update/provider/expressTemplates | jq -r '.["${{ steps.config.outputs.tomcat }}"]')
+          echo "Downloading Express template from: $EXPRESS_URL"
           curl -L -o express-template.zip "$EXPRESS_URL"
           unzip -q express-template.zip -d lucee-express
 
-      - name: Download Lucee JAR (7.0 snapshot)
+      - name: Download Lucee JAR
         id: lucee-jar
         run: |
-          LUCEE_URL=$(curl -s "https://update.lucee.org/rest/update/provider/latest/7.0/snapshot/jar/url" | tr -d '"')
+          LUCEE_URL=$(curl -s "https://update.lucee.org/rest/update/provider/latest/${{ matrix.lucee }}/url" | tr -d '"')
           LUCEE_VERSION=$(basename "$LUCEE_URL" | sed 's/lucee-//;s/\.jar//')
           echo "LUCEE_VERSION=$LUCEE_VERSION" >> $GITHUB_OUTPUT
           curl -L -f -o lucee.jar "$LUCEE_URL"
