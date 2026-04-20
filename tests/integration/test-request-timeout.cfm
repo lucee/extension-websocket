@@ -16,8 +16,8 @@ try {
 	if ( !structKeyExists( getFunctionList(), "CreateWebSocketClient" ) )
 		throw( message="CreateWebSocketClient not available", type="TestSetupError" );
 
-	client = new tests.integration.ClientListener();
-	ws = CreateWebSocketClient( "ws://localhost:8888/ws/LongOnFirstOpenListener", client );
+	listener = new tests.integration.ClientListener();
+	ws = CreateWebSocketClient( "ws://localhost:8888/ws/LongOnFirstOpenListener", listener );
 
 	// Wait long enough for requestTimeout (3s) to fire but less than the 15s hard cap
 	sleep( 8000 );

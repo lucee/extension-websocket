@@ -14,8 +14,8 @@ try {
 	if ( !structKeyExists( getFunctionList(), "CreateWebSocketClient" ) )
 		throw( message="CreateWebSocketClient not available", type="TestSetupError" );
 
-	client = new tests.integration.ClientListener();
-	ws = CreateWebSocketClient( "ws://localhost:8888/ws/OnOpenAsyncListener", client );
+	listener = new tests.integration.ClientListener();
+	ws = CreateWebSocketClient( "ws://localhost:8888/ws/OnOpenAsyncListener", listener );
 	sleep( 1000 );  // generous window for async callback to complete
 
 	ws.disconnect();
