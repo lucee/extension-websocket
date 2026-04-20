@@ -257,9 +257,7 @@ jobs:
           echo "Running integration tests on Lucee ${{ matrix.lucee }}..."
           FAILED=false
           RESULTS=""
-          # test-session-access parked pending LDEV-6277 (wsClient.getSession() not exposed) —
-          # re-add once the Java fix lands
-          for test in test-websocket-client test-lifecycle-callbacks test-return-value-send test-wsclient-broadcast test-wsclients-plural test-binary-send test-close test-onfirstopen-rearm test-onopen-async test-request-timeout; do
+          for test in test-websocket-client test-lifecycle-callbacks test-return-value-send test-wsclient-broadcast test-wsclients-plural test-binary-send test-close test-session-access test-onfirstopen-rearm test-onopen-async test-request-timeout; do
             echo ""
             echo "=============================================="
             echo "Running ${test}"
@@ -352,7 +350,7 @@ jobs:
             echo '```' >> $GITHUB_STEP_SUMMARY
             cat /tmp/integration-results.txt >> $GITHUB_STEP_SUMMARY || true
             echo '```' >> $GITHUB_STEP_SUMMARY
-            for test in test-websocket-client test-lifecycle-callbacks test-return-value-send test-wsclient-broadcast test-wsclients-plural test-binary-send test-close test-onfirstopen-rearm test-onopen-async test-request-timeout; do
+            for test in test-websocket-client test-lifecycle-callbacks test-return-value-send test-wsclient-broadcast test-wsclients-plural test-binary-send test-close test-session-access test-onfirstopen-rearm test-onopen-async test-request-timeout; do
               if [ -f /tmp/${test}.txt ] && grep -q "FAILED" /tmp/${test}.txt; then
                 echo "" >> $GITHUB_STEP_SUMMARY
                 echo "#### ${test}" >> $GITHUB_STEP_SUMMARY

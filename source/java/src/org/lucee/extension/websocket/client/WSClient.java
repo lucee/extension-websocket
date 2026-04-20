@@ -19,7 +19,7 @@ public final class WSClient extends AbsWSClient {
 	public WSClient(WebSocketEndpointFactory factory, Object session) {
 		super(factory, "WSClient");
 		this.session = session;
-		keys = new Key[] { BROADCAST_MESSAGE, CLOSE, IS_OPEN, SEND_MESSAGE };
+		keys = new Key[] { BROADCAST_MESSAGE, CLOSE, GET_SESSION, IS_OPEN, SEND_MESSAGE };
 	}
 
 	@Override
@@ -51,6 +51,10 @@ public final class WSClient extends AbsWSClient {
 				throw caster.toPageException(e);
 			}
 		}
+		else if (GET_SESSION.equals(name)) {
+			checkArgs(name, args, 0);
+			return session;
+		}
 
 		throw exception.createExpressionException("WSClient does not have the function [" + name + "]");
 	}
@@ -78,6 +82,9 @@ public final class WSClient extends AbsWSClient {
 				throw caster.toPageException(e);
 			}
 		}
+		else if (GET_SESSION.equals(name)) {
+			return session;
+		}
 		throw exception.createExpressionException("WSClient does not have the function [" + name + "]");
 	}
 
@@ -94,6 +101,8 @@ public final class WSClient extends AbsWSClient {
 				+ "\n\tisClose():boolean;"
 
 				+ "\n\tclose():void;"
+
+				+ "\n\tgetSession():Session;"
 
 				+ "\n}";
 	}

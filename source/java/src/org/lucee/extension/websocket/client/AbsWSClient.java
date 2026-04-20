@@ -44,6 +44,7 @@ public abstract class AbsWSClient implements Objects {
 	protected Key IS_CLOSE;
 	protected Key SIZE;
 	protected Key GET_CLIENTS;
+	protected Key GET_SESSION;
 
 	protected final WebSocketEndpointFactory factory;
 	private String className;
@@ -61,6 +62,7 @@ public abstract class AbsWSClient implements Objects {
 		IS_CLOSE = caster.toKey("isClose");
 		SIZE = caster.toKey("size");
 		GET_CLIENTS = caster.toKey("getClients");
+		GET_SESSION = caster.toKey("getSession");
 	}
 
 	@Override
