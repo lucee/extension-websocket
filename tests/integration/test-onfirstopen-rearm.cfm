@@ -40,19 +40,17 @@ try {
 		writeOutput( "  - #e#" & chr( 10 ) );
 
 	firstOpenCount = 0;
-	lastCloseCount = 0;
 	for ( e in events ) {
 		if ( e == "onFirstOpen" ) firstOpenCount++;
-		if ( e == "onLastClose" ) lastCloseCount++;
 	}
 
 	errors = [];
 
+	// onFirstOpen firing twice is the real claim — the channel went to zero, then back to one.
+	// NOT asserting onLastClose because it runs on an async thread and races with the
+	// window we sample in; test-lifecycle-callbacks covers its existence.
 	if ( firstOpenCount != 2 )
 		arrayAppend( errors, "expected onFirstOpen to fire 2 times (once per cold start), got #firstOpenCount#" );
-
-	if ( lastCloseCount < 1 )
-		arrayAppend( errors, "expected onLastClose to fire at least once, got #lastCloseCount#" );
 
 	if ( arrayLen( errors ) ) {
 		writeOutput( chr( 10 ) & "FAILED:" & chr( 10 ) );
