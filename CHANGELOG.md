@@ -2,6 +2,7 @@
 
 ## 3.0.0.21 (unreleased)
 
+- [LDEV-6277](https://luceeserver.atlassian.net/browse/LDEV-6277) — expose `wsClient.getSession()` so listeners can reach the underlying JSR-356 `Session` (`getId()`, `getUserProperties()`, `getRequestParameterMap()`)
 - [LDEV-6221](https://luceeserver.atlassian.net/browse/LDEV-6221) — improve reflection fallback warning message to explain why and that a servlet engine restart is needed
 
 ## 3.0.0.20

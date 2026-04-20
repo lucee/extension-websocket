@@ -24,6 +24,7 @@ LUCEE_EXTENSIONS=org.lucee:websocket-extension:3.0.0.20-SNAPSHOT
 
 - **Listener components** — CFML components with `onOpen`, `onMessage`, `onClose`, `onError`, `onFirstOpen`, `onLastClose` lifecycle methods.
 - **Async open handler** — optional `onOpenAsync` runs in parallel with `onOpen` for long-running init work.
+- **JSR-356 Session access** — `wsClient.getSession()` exposes the underlying `javax.websocket.Session` / `jakarta.websocket.Session` for per-connection state (`getUserProperties()`), connection identity (`getId()`), and handshake data (`getRequestParameterMap()`).
 - **`websocketInfo()` BIF** — returns `version`, `mapping`, `config`, `configFile`, `log`, and an `instances[]` array of active sessions with their component + session metadata.
 - **Extension hot-upgrade** — upgrade the `.lex` in-place via `inject()` without restarting the servlet container.
 - **Configurable timeouts** — `idleTimeout` and `requestTimeout` per web context via `websocket.json`.
