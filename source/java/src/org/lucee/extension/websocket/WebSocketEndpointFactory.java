@@ -66,8 +66,11 @@ public class WebSocketEndpointFactory {
 
 			cs = (ConfigServer) config;
 
+			// TODO LDEV-6222: use ConfigListener.onLoadWebContext() for event-driven init
+			// instead of polling. Currently blocked because ConfigServer.setConfigListener()
+			// only accepts a single listener — we'd overwrite any other extension's listener.
+			// Needs Lucee core to support a list of listeners first.
 			new Registrar(this, config).start();
-			// register();
 
 			instance = this;
 		}
@@ -77,9 +80,13 @@ public class WebSocketEndpointFactory {
 		}
 	}
 
-	// get or create the Data entry for a web context (always succeeds, thread-safe)
+	// get or create the Data entry for a web context (thread-safe)
+	// returns null if the web context is still initialising (getIdentification() not ready)
 	private Data getOrCreateData(ConfigWeb cw) {
-		return datas.computeIfAbsent(cw.getIdentification().getId(), k -> new Data(cw));
+		if (cw == null) throw new IllegalArgumentException("ConfigWeb is null — web context not resolved");
+		lucee.runtime.config.Identification id = cw.getIdentification();
+		if (id == null) return null;
+		return datas.computeIfAbsent(id.getId(), k -> new Data(cw));
 	}
 
 	// read config, create mapping, set timeouts for a web context
@@ -184,9 +191,19 @@ public class WebSocketEndpointFactory {
 	private void scanWebContexts() {
 		for (ConfigWeb cw: cs.getConfigWebs()) {
 			try {
-				// Skip CLI servlet contexts
+				// Skip CLI servlet contexts or contexts still initialising
 				if (cw != null && !WSUtil.isCliServletContext(cw)) {
-					getOrCreateData(cw);
+					Data data = getOrCreateData(cw);
+					if (data == null) continue;
+					if (data.mapping == null) {
+						PageContext pc = WSUtil.createPageContext(this, cw, null, null);
+						try {
+							initContextComponents(data, pc);
+						}
+						finally {
+							WSUtil.releasePageContext(pc);
+						}
+					}
 					registerEndpoint(cw);
 				}
 			}
@@ -198,6 +215,7 @@ public class WebSocketEndpointFactory {
 
 	public Struct getInfo(ConfigWeb config, boolean addRaw) throws PageException {
 		Data data = getOrCreateData(config);
+		if (data == null) throw eng.getExceptionUtil().createApplicationException("web context not yet ready (getIdentification() returned null)");
 		if (data.mapping == null) {
 			// lazy init — retry if previous attempt failed
 			PageContext pc = WSUtil.createPageContext(this, config, null, null);
@@ -236,6 +254,7 @@ public class WebSocketEndpointFactory {
 	public Mapping getComponentMapping(PageContext pc) throws PageException, IOException {
 		ConfigWeb cw = pc.getConfig();
 		Data data = getOrCreateData(cw);
+		if (data == null) throw eng.getExceptionUtil().createApplicationException("web context not yet ready (getIdentification() returned null)");
 		if (data.mapping == null) {
 			// lazy init — retry if previous attempt failed
 			initContextComponents(data, pc);
@@ -287,23 +306,33 @@ public class WebSocketEndpointFactory {
 	}
 
 	public java.util.Collection<Object> getSessions(ConfigWeb config) {
-		return getOrCreateData(config).sessions.values();
+		Data data = getOrCreateData(config);
+		if (data == null) throw new IllegalStateException("web context not yet ready");
+		return data.sessions.values();
 	}
 
 	public void setSessions(ConfigWeb config, Object session) {
-		getOrCreateData(config).sessions.put(WSUtil.getId(config, session), session);
+		Data data = getOrCreateData(config);
+		if (data == null) throw new IllegalStateException("web context not yet ready");
+		data.sessions.put(WSUtil.getId(config, session), session);
 	}
 
 	public void remSessions(ConfigWeb config, Object session) {
-		getOrCreateData(config).sessions.remove(WSUtil.getId(config, session));
+		Data data = getOrCreateData(config);
+		if (data == null) throw new IllegalStateException("web context not yet ready");
+		data.sessions.remove(WSUtil.getId(config, session));
 	}
 
 	public long getRequestTimeout(ConfigWeb cw) {
-		return getOrCreateData(cw).requestTimeout;
+		Data data = getOrCreateData(cw);
+		if (data == null) throw new IllegalStateException("web context not yet ready");
+		return data.requestTimeout;
 	}
 
 	public long getIdleTimeout(ConfigWeb cw) {
-		return getOrCreateData(cw).idleTimeout;
+		Data data = getOrCreateData(cw);
+		if (data == null) throw new IllegalStateException("web context not yet ready");
+		return data.idleTimeout;
 	}
 
 	private static class Data {
