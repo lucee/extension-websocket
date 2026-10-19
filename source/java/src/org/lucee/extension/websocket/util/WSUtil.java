@@ -85,9 +85,13 @@ public class WSUtil {
 
 		String reqContextPath = null;
 
-		
+		ConfigWeb[] webs = cs.getConfigWebs();
+
+		// single web context — no ambiguity, just use it
+		if (webs.length == 1 && webs[0] != null) return webs[0];
+
 		// get a matching servletContext
-		for (ConfigWeb cw: cs.getConfigWebs()) {
+		for (ConfigWeb cw: webs) {
 			if (reqContextPath == null) {
 				String reqURI = "";
 				if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAKARTA) reqURI = ((jakarta.websocket.Session) session).getRequestURI().toString();
@@ -95,12 +99,10 @@ public class WSUtil {
 				reqContextPath = reqURI.substring(0, reqURI.indexOf("/ws"));
 			}
 			if (getContextPath(cw).equals(reqContextPath)) return cw;
-			// hack workaround, if there's only one, just use it?
-			if (cs.getConfigWebs().length == 1) return cw;
-
-			// print.e(getContextPath(cw.getServletContext()) + " == " + reqContextPath);
 		}
-		return null;
+
+		throw new RuntimeException("no web context found matching context path [" + reqContextPath + "], available contexts: " + webs.length
+				+ ". If behind a reverse proxy, ensure the context path is preserved.");
 	}
 
 	private static String getContextPath(ConfigWeb cw) {
