@@ -11,7 +11,7 @@ WebSocket server support for Lucee CFML — define listener components with life
 Install via Lucee Admin, or pin in your environment:
 
 ```bash
-LUCEE_EXTENSIONS=org.lucee:websocket-extension:3.0.0.20-SNAPSHOT
+LUCEE_EXTENSIONS=org.lucee:websocket-extension:3.0.0.21
 ```
 
 ## Documentation
