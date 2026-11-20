@@ -6,6 +6,7 @@
 - [LDEV-6457](https://luceeserver.atlassian.net/browse/LDEV-6457) — **behaviour change**: `websocketInfo()` only returns the sessions of the current web context, ordered newest first; called from inside a listener it only returns the sessions of that listener component. New optional argument `component` (`"*"` for all components). Instances now also contain `id`, `componentName`, `openTime` and `lastMessageTime`
 - [LDEV-6457](https://luceeserver.atlassian.net/browse/LDEV-6457) — stale session cleanup: ping every `pingInterval` (default 30s) and close sessions without a pong within `pongTimeout` (default 10s); optional `staleTimeout` (default off) closes sessions that did not send a message, e.g. pages frozen in Chrome's back/forward cache. Configurable in `websocket.json` or as listener properties
 - [LDEV-6457](https://luceeserver.atlassian.net/browse/LDEV-6457) — skip `onOpenAsync` for sessions that are already closed, no more `IllegalStateException` from `getQueryString()`
+- [LDEV-6972](https://luceeserver.atlassian.net/browse/LDEV-6972) — fix the endpoint being registered twice at startup when the startup hook is instantiated more than once, Tomcat then failed the deployment and all `/ws/` URLs returned 404; the registration is now claimed atomically JVM wide and the default `websocket.json` is created by one thread only
 
 ## 3.0.0.21 (unreleased)
 

@@ -442,6 +442,34 @@ jobs:
             echo "IDLE_TEST_RESULT=✅ PASSED" >> $GITHUB_OUTPUT
           fi
 
+      - name: Test endpoint registration (LDEV-6972)
+        id: test-endpoint-registration
+        continue-on-error: true
+        run: |
+          echo "Testing endpoint registration on Lucee ${{ matrix.lucee }}..."
+          FAILED=false
+          RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8888/tests/test-endpoint-registration.cfm)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          echo "$BODY"
+          echo "$BODY" > /tmp/test-endpoint-registration.txt
+          if [ "$HTTP_CODE" != "200" ] || echo "$BODY" | grep -q "FAILED"; then
+            FAILED=true
+          fi
+          # the endpoint must have been added exactly once at startup, a second addEndpoint() makes Tomcat fail the deployment
+          if grep -q "Multiple Endpoints may not be deployed" lucee-express/logs/catalina.out 2>/dev/null; then
+            echo "FAILED: endpoint was registered more than once at startup" | tee -a /tmp/test-endpoint-registration.txt
+            grep -n -B2 -A6 "Multiple Endpoints may not be deployed" lucee-express/logs/catalina.out | tee -a /tmp/test-endpoint-registration.txt
+            FAILED=true
+          fi
+          if [ "$FAILED" = "true" ]; then
+            echo "ENDPOINT_TEST_RESULT=❌ FAILED" >> $GITHUB_OUTPUT
+            echo "ENDPOINT_TEST_FAILED=true" >> $GITHUB_OUTPUT
+          else
+            echo "Test passed!"
+            echo "ENDPOINT_TEST_RESULT=✅ PASSED" >> $GITHUB_OUTPUT
+          fi
+
       - name: Write test summary
         if: always()
         run: |
@@ -455,6 +483,7 @@ jobs:
           echo "| websocketInfo() | ${{ steps.test-websocket-info.outputs.TEST_RESULT || '⚠️ Unknown' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Integration Tests | ${{ steps.integration-tests.outputs.INTEGRATION_RESULT || '⚠️ Unknown' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| idleTimeout (LDEV-6219) | ${{ steps.test-idle-timeout.outputs.IDLE_TEST_RESULT || '⚠️ Unknown' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Endpoint registration (LDEV-6972) | ${{ steps.test-endpoint-registration.outputs.ENDPOINT_TEST_RESULT || '⚠️ Unknown' }} |" >> $GITHUB_STEP_SUMMARY
 
           # Include failure details in summary
           if [ "${{ steps.test-websocket-info.outputs.TEST_FAILED }}" = "true" ]; then
@@ -490,8 +519,16 @@ jobs:
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
 
+          if [ "${{ steps.test-endpoint-registration.outputs.ENDPOINT_TEST_FAILED }}" = "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Endpoint registration Test Output (LDEV-6972)" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat /tmp/test-endpoint-registration.txt >> $GITHUB_STEP_SUMMARY || true
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
       - name: Fail if tests failed
-        if: steps.test-websocket-info.outputs.TEST_FAILED == 'true' || steps.integration-tests.outputs.INTEGRATION_FAILED == 'true' || steps.test-idle-timeout.outputs.IDLE_TEST_FAILED == 'true'
+        if: steps.test-websocket-info.outputs.TEST_FAILED == 'true' || steps.integration-tests.outputs.INTEGRATION_FAILED == 'true' || steps.test-idle-timeout.outputs.IDLE_TEST_FAILED == 'true' || steps.test-endpoint-registration.outputs.ENDPOINT_TEST_FAILED == 'true'
         run: exit 1
 
       - name: Stop Lucee Express

@@ -36,6 +36,7 @@ public class WebSocketEndpointFactory {
 	private static final Class<?> JAVAX_ENDPOINT_CLASS = JavaxWebSocketEndpoint.class;
 	private final ConfigServer cs;
 	private final CFMLEngine eng;
+	private static final String ENDPOINT_PROPERTY = "lucee.websocket.endpoint";
 	private static WebSocketEndpointFactory instance = null;
 	private static RuntimeException re;
 	// private Map<String, ConfigWeb> configs = new HashMap<>();
@@ -142,21 +143,39 @@ public class WebSocketEndpointFactory {
 		if (isEndpointRegistered) return;
 		synchronized (token) {
 			if (isEndpointRegistered) return;
-			Properties props = System.getProperties();
-			Object endpoint = props.get("lucee.websocket.endpoint");
+			short containerType = WSUtil.getContainerType(cw);
+			Class<?> endpointClass = containerType == WSUtil.TYPE_JAKARTA ? JAKARTA_ENDPOINT_CLASS : (containerType == WSUtil.TYPE_JAVAX ? JAVAX_ENDPOINT_CLASS : null);
+			Object oServerContainer = WSUtil.getServletContextAttribute(cw, (containerType == WSUtil.TYPE_JAKARTA ? "jakarta" : "javax") + ".websocket.server.ServerContainer");
 
+			if (endpointClass == null) {
+				if (oServerContainer == null) throw eng.getExceptionUtil().createApplicationException("[javax.websocket.server.ServerContainer] not supported on this server.");
+				else throw eng.getExceptionUtil()
+						.createApplicationException("container [" + oServerContainer.getClass().getName() + "] not supported, only the following container are supported ["
+								+ jakarta.websocket.server.ServerContainer.class.getName() + ", " + javax.websocket.server.ServerContainer.class.getName() + "].");
+			}
+
+			// LDEV-6972: the startup hook can be instantiated more than once (e.g. deploy folder + config load),
+			// every instance has its own Registrar thread and its own token, so the guard above is not enough.
+			// claimEndpoint is atomic JVM wide (also across bundle class loaders), so only one caller ever adds the endpoint.
+			Properties props = System.getProperties();
+			Object endpoint = claimEndpoint(props, endpointClass);
+
+			// already registered by an other factory instance of this bundle
+			if (endpoint == endpointClass) {
+				String msg = "WebSocketEndpoint already registered with servlet container";
+				WSUtil.info(cs, msg);
+				WSUtil.info(cw, msg);
+			}
 			// update
-			if (endpoint instanceof Class) {
+			else if (endpoint instanceof Class) {
 				String msg = "update existing WebSocketEndpoint with via injection";
 				WSUtil.info(cs, msg);
 				WSUtil.info(cw, msg);
 
 				CFMLEngine eng = CFMLEngineFactory.getInstance();
 				try {
-					if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAKARTA)
-						eng.getClassUtil().callStaticMethod((Class) endpoint, "inject", new Object[] { new JakartaWebSocketEndpoint() });
-					else if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAVAX)
-						eng.getClassUtil().callStaticMethod((Class) endpoint, "inject", new Object[] { new JavaxWebSocketEndpoint() });
+					if (containerType == WSUtil.TYPE_JAKARTA) eng.getClassUtil().callStaticMethod((Class) endpoint, "inject", new Object[] { new JakartaWebSocketEndpoint() });
+					else eng.getClassUtil().callStaticMethod((Class) endpoint, "inject", new Object[] { new JavaxWebSocketEndpoint() });
 				}
 				catch (PageException e) {
 					print.e(e);
@@ -169,38 +188,35 @@ public class WebSocketEndpointFactory {
 				WSUtil.info(cs, msg);
 				WSUtil.info(cw, msg);
 				try {
-
-					Object oServerContainer = WSUtil.getServletContextAttribute(cw,
-							(WSUtil.getContainerType(cw) == WSUtil.TYPE_JAKARTA ? "jakarta" : "javax") + ".websocket.server.ServerContainer");
-
-					if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAKARTA) {
-						props.put("lucee.websocket.endpoint", JAKARTA_ENDPOINT_CLASS);
-						((jakarta.websocket.server.ServerContainer) oServerContainer).addEndpoint(JAKARTA_ENDPOINT_CLASS);
-					}
-					else if (WSUtil.getContainerType(cw) == WSUtil.TYPE_JAVAX) {
-						props.put("lucee.websocket.endpoint", JAVAX_ENDPOINT_CLASS);
-						((javax.websocket.server.ServerContainer) oServerContainer).addEndpoint(JAVAX_ENDPOINT_CLASS);
-					}
-					else {
-						if (oServerContainer == null)
-							throw eng.getExceptionUtil().createApplicationException("[javax.websocket.server.ServerContainer] not supported on this server.");
-						else throw eng.getExceptionUtil()
-								.createApplicationException("container [" + oServerContainer.getClass().getName()
-										+ "] not supported, only the following container are supported [" + jakarta.websocket.server.ServerContainer.class.getName() + ", "
-										+ javax.websocket.server.ServerContainer.class.getName() + "].");
-					}
+					if (containerType == WSUtil.TYPE_JAKARTA) ((jakarta.websocket.server.ServerContainer) oServerContainer).addEndpoint(endpointClass);
+					else ((javax.websocket.server.ServerContainer) oServerContainer).addEndpoint(endpointClass);
 				}
-
-				catch (jakarta.websocket.DeploymentException | javax.websocket.DeploymentException e) {
+				catch (jakarta.websocket.DeploymentException | javax.websocket.DeploymentException | RuntimeException e) {
 					// some container are not able/do not allow to update the endpoint, but this is needed when the
-					// extension updates, so we inject us in the old extension version
+					// extension updates, so we inject us in the old extension version (see above).
+					// release the claim, so a later attempt can try again
+					props.remove(ENDPOINT_PROPERTY, endpointClass);
 					throw eng.getCastUtil().toPageException(e);
 				}
 			}
 			isEndpointRegistered = true;
 		}
+	}
 
-		// inject(Object nv)
+	/**
+	 * Atomically claims the (JVM wide) endpoint registration slot.
+	 *
+	 * @return null when the caller claimed the slot and has to add the endpoint to the servlet container,
+	 *         otherwise the endpoint class already registered (by this or an other bundle version)
+	 */
+	public static Object claimEndpoint(Properties props, Class<?> endpointClass) {
+		// Properties is a Hashtable, putIfAbsent/replace are synchronized on the shared instance
+		while (true) {
+			Object existing = props.putIfAbsent(ENDPOINT_PROPERTY, endpointClass);
+			if (existing == null || existing instanceof Class) return existing;
+			// unexpected value (not set by us), replace it atomically
+			if (props.replace(ENDPOINT_PROPERTY, existing, endpointClass)) return null;
+		}
 	}
 
 	// called by the Registrar thread to discover and register new web contexts

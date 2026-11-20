@@ -8,6 +8,7 @@ Exercise the extension's own contract — WebSocket server not required beyond w
 
 - [`test-websocket-info.cfm`](test-websocket-info.cfm) — smoke test: extension bundle loaded, [`websocketInfo()`](../../../lucee-docs/docs/03.reference/01.functions/websocketinfo) returns the expected shape (`mapping`, `config`, `instances`).
 - [`test-idle-timeout.cfm`](test-idle-timeout.cfm) — [LDEV-6219](https://luceeserver.atlassian.net/browse/LDEV-6219): per-listener `property idleTimeout` must apply to every session on that listener, not just the first.
+- [`test-endpoint-registration.cfm`](test-endpoint-registration.cfm) — [LDEV-6972](https://luceeserver.atlassian.net/browse/LDEV-6972): the endpoint is registered exactly once JVM wide, even with concurrent registrations (multiple startup hook instances), and concurrent creation of the default `websocket.json` does not fail. CI also fails the job when `catalina.out` contains Tomcat's "Multiple Endpoints may not be deployed" error.
 - [`WebSocketInfo.cfc`](WebSocketInfo.cfc) / [`WebSocketListener.cfc`](WebSocketListener.cfc) / [`TestPlaceholder.cfc`](TestPlaceholder.cfc) — support CFCs.
 - [`websockets/`](websockets/) — listener CFCs (`TestListener`, `TimeoutListener`) dropped into the configured websockets directory.
 

@@ -244,23 +244,33 @@ public class WSUtil {
 
 		}
 
-		if (!res.isFile()) {
-			info(pc.getConfig(), "creating configuration file at  [" + res + "], using default settings");
-			res.getParentResource().mkdirs();
-			try {
-				eng.getIOUtil().write(res, "{\n\t\"directory\":\"" + DEFAULT_DIRECTORY + "\", \n\t\"requestTimeout\":50, \n\t\"idleTimeout\":300\n}", false, utf8);
-			}
-			catch (IOException e) {
-				// another thread may have created the file concurrently, that's fine
-				if (!res.isFile() || res.length() == 0) throw e;
-			}
-		}
+		createConfigFileIfMissing(pc.getConfig(), res, utf8);
 
 		info(pc.getConfig(), "found configuration at  [" + res + "]");
 
 		String content = eng.getIOUtil().toString(res, utf8);
 
 		return new Object[] { res, eng.getCastUtil().toStruct(deserializeJSON(pc, content)) };
+	}
+
+	// LDEV-6972: serialise the creation within this bundle, so concurrent callers (multiple Registrar threads) do not race
+	private static final Object CONFIG_FILE_LOCK = new Object();
+
+	public static void createConfigFileIfMissing(Config config, Resource res, Charset charset) throws IOException {
+		if (res.isFile()) return;
+		synchronized (CONFIG_FILE_LOCK) {
+			if (res.isFile()) return;
+			info(config, "creating configuration file at  [" + res + "], using default settings");
+			res.getParentResource().mkdirs();
+			try {
+				CFMLEngineFactory.getInstance().getIOUtil().write(res, "{\n\t\"directory\":\"" + DEFAULT_DIRECTORY + "\", \n\t\"requestTimeout\":50, \n\t\"idleTimeout\":300\n}", false,
+						charset);
+			}
+			catch (IOException e) {
+				// an other process/bundle version may have created the file concurrently, that's fine
+				if (!res.isFile() || res.length() == 0) throw e;
+			}
+		}
 	}
 
 	public static Object toCloseReason(ConfigWeb cw, Object obj) throws PageException {
