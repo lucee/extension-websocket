@@ -253,7 +253,7 @@ jobs:
 
       - name: Download Lucee Express template
         run: |
-          EXPRESS_URL=$(curl -s https://update.lucee.org/rest/update/provider/expressTemplates | jq -r '.["${{ steps.config.outputs.tomcat }}"]')
+          EXPRESS_URL=$(curl -fsSL https://github.com/lucee/lucee-installer/releases/download/express-templates/express-templates.json | jq -r '.["${{ steps.config.outputs.tomcat }}"]')
           echo "Downloading Express template from: $EXPRESS_URL"
           curl -L -o express-template.zip "$EXPRESS_URL"
           unzip -q express-template.zip -d lucee-express
@@ -590,7 +590,7 @@ jobs:
 
       - name: Download Lucee Express template (tomcat-11)
         run: |
-          EXPRESS_URL=$(curl -s https://update.lucee.org/rest/update/provider/expressTemplates | jq -r '.["tomcat-11"]')
+          EXPRESS_URL=$(curl -fsSL https://github.com/lucee/lucee-installer/releases/download/express-templates/express-templates.json | jq -r '.["tomcat-11"]')
           curl -L -o express-template.zip "$EXPRESS_URL"
           unzip -q express-template.zip -d lucee-express
 
