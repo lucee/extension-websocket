@@ -43,7 +43,7 @@ mkdir -p "$TEST_DIR"
 # Download Express template if not exists
 if [ ! -f "$TEST_DIR/express-template.zip" ]; then
 	echo "Downloading Express template for $TOMCAT..."
-	EXPRESS_URL=$(curl -s https://update.lucee.org/rest/update/provider/expressTemplates | grep -o "\"$TOMCAT\":\"[^\"]*\"" | cut -d'"' -f4)
+	EXPRESS_URL=$(curl -fsSL https://github.com/lucee/lucee-installer/releases/download/express-templates/express-templates.json | grep -o "\"$TOMCAT\":\"[^\"]*\"" | cut -d'"' -f4)
 	curl -L -o "$TEST_DIR/express-template.zip" "$EXPRESS_URL"
 fi
 
